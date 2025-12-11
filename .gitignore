@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.idea/
+.vscode/
+*.tsbuildinfo
+.eslintcache
+.prettiercache
+.DS_Store
+*.log
