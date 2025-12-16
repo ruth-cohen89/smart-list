@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import { AuthService } from '../services/auth.service'
 
-export class UserController {
+export class AuthController {
     constructor(private readonly service: AuthService) {
     }
 
