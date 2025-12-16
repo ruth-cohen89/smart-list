@@ -1,10 +1,14 @@
 node_modules/
 dist/
-.env
+
+.env.development
+
 .idea/
 .vscode/
+
 *.tsbuildinfo
+
 .eslintcache
 .prettiercache
-.DS_Store
+
 *.log
