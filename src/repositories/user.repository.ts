@@ -44,6 +44,7 @@ export class UserMongoRepository implements UserRepository {
         return this.mapUser(u)
     }
 
+    // TODO: remove business logig to the service
     async create(user: User, role: "user" | "admin"): Promise<User> {
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(user.password, saltRounds);

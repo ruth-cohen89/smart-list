@@ -7,6 +7,6 @@ export class AuthController {
 
     signUp = async (req: Request, res: Response) => {
         const user = await this.service.signUp(req.body)
-        res.json(user)
+        res.status(201).json(user);
     }
 }

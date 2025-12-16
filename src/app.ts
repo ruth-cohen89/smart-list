@@ -2,6 +2,7 @@ import express, {Request, Response, NextFunction } from 'express'
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import mainRouter from './routes/main.routes';
 
@@ -17,6 +18,10 @@ export const createApp = () => {
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
     app.use(compression());
+
+    if (process.env.NODE_ENV !== 'production') {
+        app.use(morgan('dev'));
+    }
 
     const limiter = rateLimit({
         windowMs: 15 * 60 * 1000,

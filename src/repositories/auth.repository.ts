@@ -1,9 +1,9 @@
 import { User } from '../models/user.model'
 import UserModel from '../infrastructure/db/user.mongoose.model'
-import bcrypt from 'bcrypt'
 
 export interface AuthRepository {
     signUp(user: User): Promise<User>
+    findByEmail(email: string): Promise<User | null>;
 }
 
 export class AuthMongoRepository implements AuthRepository {
@@ -20,12 +20,15 @@ export class AuthMongoRepository implements AuthRepository {
         }
     }
 
-    async signUp(user: User): Promise<User> {
-        const saltRounds = 10
-        const hashedPassword = await bcrypt.hash(user.password, saltRounds)
-        const created = await UserModel.create({ ...user, password: hashedPassword })
-        return this.mapUser(created)
+    async findByEmail(email: string): Promise<User | null> {
+        const user = await UserModel.findOne({ email }).lean();
+        return user ? this.mapUser(user) : null;
     }
 
+
+    async signUp(user: User): Promise<User> {
+        const created = await UserModel.create({ ...user })
+        return this.mapUser(created)
+    }
 
 }
