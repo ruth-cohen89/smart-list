@@ -1,12 +1,12 @@
 import { Request, Response } from 'express'
 import { UserService } from '../services/user.service'
-import { UpdateProfileDTO } from "../types/User";
+//import { UpdateProfileDTO } from "../types/User";
 
 
 export class UserController {
     constructor(private readonly service: UserService) {}
 
-    getAll = async (req: Request, res: Response) => {
+    getAll = async (_req: Request, res: Response) => {
         const users = await this.service.getAllUsers()
         res.json(users)
     }
