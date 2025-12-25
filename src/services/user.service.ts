@@ -1,10 +1,12 @@
-import { UserRepository } from '../repositories/user.repository'
+import { userRepository } from '../repositories/user.repository';
+
 import { User } from '../models/user.model'
 import { UpdateProfileDTO } from "../types/User";
 
 
 export class UserService {
-    constructor(private readonly repo: UserRepository) {}
+    private repo = userRepository;
+
 
     getAllUsers(): Promise<User[]> {
         return this.repo.findAll()

@@ -1,9 +1,8 @@
-// repositories/user.repository.ts
 import { User } from '../models/user.model'
 import UserModel from '../infrastructure/db/user.mongoose.model'
 import bcrypt from 'bcrypt'
 
-// Interface של Repository
+
 export interface UserRepository {
     findAll(): Promise<User[]>
     findById(id: string): Promise<User | null>
@@ -44,7 +43,7 @@ export class UserMongoRepository implements UserRepository {
         return this.mapUser(u)
     }
 
-    // TODO: remove business logig to the service
+    // TODO: remove business logic to the service
     async create(user: User, role: "user" | "admin"): Promise<User> {
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(user.password, saltRounds);
@@ -73,3 +72,5 @@ export class UserMongoRepository implements UserRepository {
         await UserModel.findByIdAndDelete(id)
     }
 }
+
+export const userRepository = new UserMongoRepository();

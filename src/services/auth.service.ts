@@ -1,23 +1,28 @@
 import bcrypt from 'bcrypt'
 import { AuthRepository } from '../repositories/auth.repository'
-import { User } from '../models/user.model'
 import { generateToken } from '../utils/jwt';
+import { handleMissingCredentials, handleInvalidCredentials } from '../errors/auth-handlers';
+import { SignupInput, LoginInput} from "../types/auth";
+import { handleMissingSignupFields } from '../errors/auth-handlers';
+
+
 
 export class AuthService {
     constructor(private readonly repo: AuthRepository) {
     }
 
-    async signUp(user: User) {
-        const existingUser = await this.repo.findByEmail(user.email);
-        if (existingUser) {
-            throw new Error('Email already in use');
+    async signUp({ fullName, email, password }: SignupInput) {
+        if (!fullName || !email || !password) {
+            throw handleMissingSignupFields();
         }
 
-        const hashedPassword = await bcrypt.hash(user.password, 10);
+        const hashedPassword = await bcrypt.hash(password, 10);
 
         const createdUser = await this.repo.signUp({
-            ...user,
+            fullName,
+            email,
             password: hashedPassword,
+            role: 'user',
         });
 
         const token = generateToken({
@@ -25,7 +30,9 @@ export class AuthService {
             role: createdUser.role,
         });
 
-        const { password, ...safeUser } = createdUser;
+        console.log('token', token)
+
+        const {password: _pw, ...safeUser } = createdUser;
 
 
         return {
@@ -33,4 +40,27 @@ export class AuthService {
             token,
         };
     }
+
+    async login({ email, password }: LoginInput) {
+        console.log('login service');
+        if (!email || !password) throw handleMissingCredentials();
+
+        const user = await this.repo.findByEmail(email);
+
+        if (!user) throw handleInvalidCredentials();
+
+        if (typeof password !== 'string' || typeof user.password !== 'string') {
+            throw handleInvalidCredentials();
+        }
+
+
+        const ok = await bcrypt.compare(password, user.password);
+        if (!ok) throw handleInvalidCredentials();
+
+        const token = generateToken({ id: user.id, role: user.role });
+        const { password: _pw, ...safeUser } = user;
+
+        return { user: safeUser, token };
+    }
+
 }

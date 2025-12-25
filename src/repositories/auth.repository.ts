@@ -1,8 +1,9 @@
 import { User } from '../models/user.model'
 import UserModel from '../infrastructure/db/user.mongoose.model'
+import { CreateUserInput } from '../types/User'
 
 export interface AuthRepository {
-    signUp(user: User): Promise<User>
+    signUp(user: CreateUserInput): Promise<User>
     findByEmail(email: string): Promise<User | null>;
 }
 
@@ -26,9 +27,14 @@ export class AuthMongoRepository implements AuthRepository {
     }
 
 
-    async signUp(user: User): Promise<User> {
-        const created = await UserModel.create({ ...user })
-        return this.mapUser(created)
+    async signUp(user: CreateUserInput): Promise<User> {
+        try {
+            const created = await UserModel.create({ ...user })
+            return this.mapUser(created)
+        } catch(err:any) {
+            throw err;
+        }
+
     }
 
 }

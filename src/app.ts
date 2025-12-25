@@ -1,10 +1,11 @@
-import express, {Request, Response, NextFunction } from 'express'
+import express from 'express'
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import mainRouter from './routes/main.routes';
+import { globalErrorHandler } from './errors/error-middleware';
 
 export const createApp = () => {
     const app = express()
@@ -32,10 +33,7 @@ export const createApp = () => {
 
     app.use('/api/v1', mainRouter)
 
-    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-        console.error(err.stack);
-        res.status(500).json({ message: 'Internal Server Error' });
-    });
+    app.use(globalErrorHandler);
 
     return app
 }
