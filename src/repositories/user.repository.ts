@@ -1,6 +1,6 @@
 import { User } from '../models/user.model'
 import UserModel from '../infrastructure/db/user.mongoose.model'
-import { CreateUserData } from '../types/User';
+import { CreateUserData, UpdateUserData } from '../types/User';
 
 
 export interface UserRepository {
@@ -8,8 +8,8 @@ export interface UserRepository {
     findById(id: string): Promise<User | null>
     findByEmail(email: string): Promise<User | null>
     create(data: CreateUserData): Promise<User>
-    update(userId: string, updates: Partial<User>): Promise<User>
-    delete(id: string): Promise<void>
+    update(userId: string, updates: UpdateUserData): Promise<User | null>;
+    delete(id: string): Promise<void>;
 }
 
 export class UserMongoRepository implements UserRepository {
@@ -47,7 +47,7 @@ export class UserMongoRepository implements UserRepository {
         const created = await UserModel.create({
             fullName: data.fullName,
             email: data.email,
-            password: data.password, // already hashed
+            password: data.password,
             role: data.role,
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -57,16 +57,21 @@ export class UserMongoRepository implements UserRepository {
     }
 
 
-    async update(userId: string, updates: Partial<User>): Promise<User> {
-        const updated = await UserModel.findByIdAndUpdate(userId, updates, { new: true }).lean();
-        if (!updated) throw new Error('User not found');
+    async update(userId: string, updates: UpdateUserData): Promise<User | null> {
+        const updated = await UserModel.findByIdAndUpdate(
+            userId,
+            updates,
+            { new: true }
+        ).lean();
+
+        if (!updated) return null;
         return this.mapUser(updated);
     }
 
-
     async delete(id: string): Promise<void> {
-        await UserModel.findByIdAndDelete(id)
+        await UserModel.findByIdAndDelete(id);
     }
+
 }
 
 export const userRepository = new UserMongoRepository();

@@ -1,12 +1,36 @@
 import { Request, Response } from 'express'
 import { UserService } from '../services/user.service'
 import { catchAsync } from '../middlewares/catch-async'
-import { CreateUserInput } from '../types/User';
+import { CreateUserInput, UpdateUserInput } from '../types/User';
+import { UpdateMeInput } from '../types/User';
+import { AppError } from '../errors/app-error';
 
 export class UserController {
     constructor(private readonly service: UserService) {}
 
-    getAll = catchAsync(async (_req: Request, res: Response) => {
+getMe = catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError('Not authenticated', 401);
+
+    const user = await this.service.getMe(req.user.id);
+    res.json(user);
+});
+
+updateMe = catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError('Not authenticated', 401);
+
+    const input = req.body as UpdateMeInput;
+    const user = await this.service.updateMe(req.user.id, input);
+    res.json(user);
+});
+
+deleteMe = catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError('Not authenticated', 401);
+
+    await this.service.deleteMe(req.user.id);
+    res.sendStatus(204);
+});
+
+getAll = catchAsync(async (_req: Request, res: Response) => {
         const users = await this.service.getAllUsers()
         res.json(users)
     });
@@ -23,16 +47,16 @@ export class UserController {
         res.status(201).json(user);
     });
 
-    // updateProfile = catchAsync(async (req: Request, res: Response) => {
-    //     const userId = req.user.id;
-    //     const updates = req.body;
-    //     const updatedUser = await this.service.updateProfile(userId, updates);
-    //     res.json(updatedUser);
-    // });
+    update = catchAsync(async (req: Request, res: Response) => {
+        const input = req.body as UpdateUserInput;
+        const user = await this.service.updateUserByAdmin(req.params.id, input);
+        res.json(user);
+    });
 
 
     delete = catchAsync(async (req: Request, res: Response) => {
-        await this.service.deleteUser(req.params.id)
-        res.sendStatus(204)
+        await this.service.deleteUserByAdmin(req.params.id);
+        res.sendStatus(204);
     });
+
 }

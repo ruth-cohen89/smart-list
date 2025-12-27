@@ -20,9 +20,36 @@ export type CreateUserInput = {
 export type CreateUserData = {
     fullName: string;
     email: string;
-    password: string; // hashed
-    role: Role;       // required
+    password: string;
+    role: Role;
 };
+
+export type UpdateUserInput = {
+    fullName?: string;
+    email?: string;
+    password?: string;
+    role?: Role;
+};
+
+export type UpdateUserData = {
+    fullName?: string;
+    email?: string;
+    password?: string;
+    role?: Role;
+    updatedAt: Date;
+};
+
+export type UpdateMeInput = {
+    fullName?: string;
+    email?: string;
+};
+
+export type UpdateMeData = {
+    fullName?: string;
+    email?: string;
+    updatedAt: Date;
+};
+
 
 
 
