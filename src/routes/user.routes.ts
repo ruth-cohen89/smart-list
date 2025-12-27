@@ -3,16 +3,16 @@ import { UserController } from '../controllers/user.controller'
 import { UserService } from '../services/user.service'
 import { authenticate } from '../middlewares/authenticate'
 import { authorize } from "../middlewares/authorize";
+
 const service = new UserService()
 const controller = new UserController(service)
 
-
 const router = Router()
 
+router.post('/', authenticate,authorize('admin'), controller.create);
 router.get('/', authenticate, authorize('admin'), controller.getAll)
-router.get('/:id', controller.getById)
+router.get('/:id', authenticate, authorize('admin'), controller.getById)
 
-//router.post('/', authenticate, authorize('admin'), controller.createUser);
 
 // TODO
 //router.patch('/:id', authMiddleware, requireRole("admin"), controller.requireRole("admin"),)

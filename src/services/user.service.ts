@@ -1,12 +1,11 @@
 import { userRepository } from '../repositories/user.repository';
-
+import { CreateUserInput, Role } from '../types/User';
 import { User } from '../models/user.model'
-import { UpdateProfileDTO } from "../types/User";
-
+import bcrypt from 'bcrypt'
+import { AppError } from "../errors/app-error";
 
 export class UserService {
     private repo = userRepository;
-
 
     getAllUsers(): Promise<User[]> {
         return this.repo.findAll()
@@ -20,20 +19,33 @@ export class UserService {
         return this.repo.findByEmail(email)
     }
 
-    async createUser(user: User, role: "user" | "admin"): Promise<User> {
-        return this.repo.create(user, role);
+    async createUserByAdmin(input: CreateUserInput): Promise<Omit<User, 'password'>> {
+        if (!input.fullName || !input.email || !input.password) {
+            throw new Error('Missing required fields');
+        }
+
+        const role: Role = input.role ?? 'user';
+
+        const existing = await this.repo.findByEmail(input.email);
+        if (existing) {
+            throw new AppError('Email already in use', 409);
+        }
+
+
+        const hashedPassword = await bcrypt.hash(input.password, 10);
+
+        const created = await this.repo.create({
+            fullName: input.fullName,
+            email: input.email,
+            password: hashedPassword, // כבר hashed
+            role,
+        });
+
+        const { password, ...safe } = created;
+        return safe;
     }
 
-    async updateProfile(userId: string, updates: UpdateProfileDTO): Promise<User> {
-        const filteredUpdates: UpdateProfileDTO = {};
-
-        if (updates.fullName !== undefined) filteredUpdates.fullName = updates.fullName;
-        if (updates.email !== undefined) filteredUpdates.email = updates.email;
-
-        return this.repo.update(userId, filteredUpdates);
-    }
-
-    deleteUser(id: string): Promise<void> {
+        deleteUser(id: string): Promise<void> {
         return this.repo.delete(id)
     }
 }

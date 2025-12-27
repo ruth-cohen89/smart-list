@@ -8,16 +8,22 @@ export interface User {
     updatedAt: Date
 }
 
+export type Role = 'user' | 'admin';
+
 export type CreateUserInput = {
     fullName: string;
     email: string;
     password: string;
-    role?: 'user' | 'admin';
+    role?: Role;
 };
 
-export interface UpdateProfileDTO {
-    fullName?: string
-    email?: string
-}
+export type CreateUserData = {
+    fullName: string;
+    email: string;
+    password: string; // hashed
+    role: Role;       // required
+};
+
+
 
 

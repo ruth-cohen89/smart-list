@@ -21,6 +21,7 @@ export const authenticate = catchAsync(async (req: Request & { user?: any }, res
         token = req.cookies.jwt;
     }
 
+
     if (!token) return next(handleNotLoggedIn());
 
     const decoded = await verifyToken(token);

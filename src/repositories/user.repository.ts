@@ -1,14 +1,14 @@
 import { User } from '../models/user.model'
 import UserModel from '../infrastructure/db/user.mongoose.model'
-import bcrypt from 'bcrypt'
+import { CreateUserData } from '../types/User';
 
 
 export interface UserRepository {
     findAll(): Promise<User[]>
     findById(id: string): Promise<User | null>
     findByEmail(email: string): Promise<User | null>
-    create(user: User, role: "user" | "admin"): Promise<User>;
-    update(userId: string, updates: Partial<User>): Promise<User>;
+    create(data: CreateUserData): Promise<User>
+    update(userId: string, updates: Partial<User>): Promise<User>
     delete(id: string): Promise<void>
 }
 
@@ -38,23 +38,19 @@ export class UserMongoRepository implements UserRepository {
     }
 
     async findByEmail(email: string): Promise<User | null> {
-        const u = await UserModel.findOne({ email }).lean()
-        if (!u) return null
-        return this.mapUser(u)
+        const u = await UserModel.findOne({ email }).lean();
+        if (!u) return null;
+        return this.mapUser(u);
     }
 
-    // TODO: remove business logic to the service
-    async create(user: User, role: "user" | "admin"): Promise<User> {
-        const saltRounds = 10;
-        const hashedPassword = await bcrypt.hash(user.password, saltRounds);
-
+    async create(data: CreateUserData): Promise<User> {
         const created = await UserModel.create({
-            fullName: user.fullName,
-            email: user.email,
-            password: hashedPassword,
-            role,
+            fullName: data.fullName,
+            email: data.email,
+            password: data.password, // already hashed
+            role: data.role,
             createdAt: new Date(),
-            updatedAt: new Date()
+            updatedAt: new Date(),
         });
 
         return this.mapUser(created);

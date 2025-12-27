@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import { UserService } from '../services/user.service'
-//import { UpdateProfileDTO } from "../types/User";
 import { catchAsync } from '../middlewares/catch-async'
+import { CreateUserInput } from '../types/User';
 
 export class UserController {
     constructor(private readonly service: UserService) {}
@@ -16,19 +16,11 @@ export class UserController {
         res.json(user)
     });
 
-    getByEmail = catchAsync(async (req: Request, res: Response) => {
-        const user = await this.service.getUserByEmail(req.params.email)
-        res.json(user)
-    })
 
-    createUser = catchAsync(async (req: Request, res: Response) => {
-        const user = await this.service.createUser(req.body, "user");
-        res.json(user);
-    });
-
-    createAdmin = catchAsync(async (req: Request, res: Response) => {
-        const user = await this.service.createUser(req.body, "admin");
-        res.json(user);
+    create = catchAsync(async (req: Request, res: Response) => {
+        const input = req.body as CreateUserInput;
+        const user = await this.service.createUserByAdmin(input);
+        res.status(201).json(user);
     });
 
     // updateProfile = catchAsync(async (req: Request, res: Response) => {
