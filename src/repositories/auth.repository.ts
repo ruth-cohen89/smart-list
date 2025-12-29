@@ -1,7 +1,7 @@
 import { User } from '../models/user.model'
 import UserModel from '../infrastructure/db/user.mongoose.model'
 import { SignupData } from '../types/auth'
-
+import { AppError } from '../errors/app-error';
 
 export interface AuthRepository {
     signUp(user: SignupData): Promise<User>
@@ -48,19 +48,22 @@ export class AuthMongoRepository implements AuthRepository {
         return u ? this.mapUser(u) : null;
     }
 
-    async updatePassword(userId: string, hashedPassword: string, changedAt: Date): Promise<void> {
-        await UserModel.findByIdAndUpdate(userId, {
-            password: hashedPassword,
-            passwordChangedAt: changedAt,
-            updatedAt: new Date(),
-        });
-    }
+
+
     async setPasswordResetToken(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
-        await UserModel.findByIdAndUpdate(userId, {
-            passwordResetTokenHash: tokenHash,
-            passwordResetExpiresAt: expiresAt,
-            updatedAt: new Date(),
-        });
+        const updated = await UserModel.findByIdAndUpdate(
+            userId,
+            {
+                passwordResetTokenHash: tokenHash,
+                passwordResetExpiresAt: expiresAt,
+                updatedAt: new Date(),
+            },
+            { new: true }
+        ).select('_id');
+
+        if (!updated) {
+            throw new AppError('User not found when setting reset token', 404);
+        }
     }
 
     async findByResetTokenHash(tokenHash: string): Promise<User | null> {
@@ -74,15 +77,35 @@ export class AuthMongoRepository implements AuthRepository {
     }
 
     async resetPassword(userId: string, hashedPassword: string, changedAt: Date): Promise<void> {
-        console.log('hashedPassword', hashedPassword)
-        await UserModel.findByIdAndUpdate(userId, {
-            password: hashedPassword,
-            passwordChangedAt: changedAt,
-            passwordResetTokenHash: null,
-            passwordResetExpiresAt: null,
-            updatedAt: new Date(),
-        });
+        const updated = await UserModel.findByIdAndUpdate(
+            userId,
+            {
+                password: hashedPassword,
+                passwordChangedAt: changedAt,
+                passwordResetTokenHash: null,
+                passwordResetExpiresAt: null,
+                updatedAt: new Date(),
+            },
+            { new: true }
+        ).select('_id');
+
+        if (!updated) throw new AppError('User not found when resetting password', 404);
     }
+
+    async updatePassword(userId: string, hashedPassword: string, changedAt: Date): Promise<void> {
+        const updated = await UserModel.findByIdAndUpdate(
+            userId,
+            {
+                password: hashedPassword,
+                passwordChangedAt: changedAt,
+                updatedAt: new Date(),
+            },
+            { new: true }
+        ).select('_id');
+
+        if (!updated) throw new AppError('User not found when updating password', 404);
+    }
+
 
     async signUp(user: SignupData): Promise<User> {
         try {

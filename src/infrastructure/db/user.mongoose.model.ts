@@ -1,16 +1,16 @@
-import mongoose, { Schema, Document } from 'mongoose'
+import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IUserDocument extends Document {
-    fullName: string
-    email: string
-    password: string
-    role: 'user' | 'admin'
-    createdAt: Date
-    updatedAt: Date
+    fullName: string;
+    email: string;
+    password: string;
+    role: 'user' | 'admin';
+    createdAt: Date;
+    updatedAt: Date;
 
-    passwordChangedAt?: Date
-    passwordResetTokenHash?: string | null
-    passwordResetExpiresAt?: Date | null
+    passwordChangedAt?: Date;
+    passwordResetTokenHash?: string | null;
+    passwordResetExpiresAt?: Date | null;
 }
 
 const UserSchema: Schema = new Schema<IUserDocument>(
@@ -26,6 +26,7 @@ const UserSchema: Schema = new Schema<IUserDocument>(
         passwordResetExpiresAt: { type: Date, default: null },
     },
     { timestamps: true }
-)
+);
 
-export default mongoose.model<IUserDocument>('User', UserSchema)
+
+export default mongoose.model<IUserDocument>('User', UserSchema);

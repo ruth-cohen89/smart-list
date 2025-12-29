@@ -9,9 +9,6 @@ export const handleUserNotFound = () =>
 export const handlePasswordChanged = () =>
     new AppError('User recently changed password! Please log in again.', 401);
 
-export const handleMissingCredentials = () =>
-    new AppError('Please provide email and password.', 400);
-
 export const handleInvalidCredentials = () =>
     new AppError('Incorrect email or password.', 401);
 
@@ -23,6 +20,3 @@ export const handleTokenExpired = () =>
 
 export const handleInvalidToken = () =>
     new AppError('Invalid token. Please log in again.', 401);
-
-export const handleMissingSignupFields = () =>
-    new AppError('Please provide fullName, email and password.', 400);
