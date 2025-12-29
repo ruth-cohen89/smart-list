@@ -6,7 +6,12 @@ export interface User {
     role: 'user' | 'admin'
     createdAt: Date
     updatedAt: Date
+
+    passwordChangedAt?: Date
+    passwordResetTokenHash?: string | null
+    passwordResetExpiresAt?: Date | null
 }
+
 
 export type Role = 'user' | 'admin';
 
