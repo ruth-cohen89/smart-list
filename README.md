@@ -38,3 +38,7 @@ npm run dev
 npm run build
 npm run start
 ```
+
+**Information:**
+fields reserved for MVP: (in consumptionProfile)
+lastPurchasedAt, lastPurchasedAt
