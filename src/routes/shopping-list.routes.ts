@@ -19,6 +19,12 @@ const router = Router();
 
 // Lists
 router.post(
+    '/from-baseline',
+    authenticate,
+    controller.createFromBaseline
+);
+
+router.post(
     '/',
     authenticate,
     validateBody(createShoppingListSchema),

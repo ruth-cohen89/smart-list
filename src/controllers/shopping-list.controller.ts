@@ -14,6 +14,16 @@ import {
 export class ShoppingListController {
     constructor(private readonly service: ShoppingListService) {}
 
+    createFromBaseline = catchAsync(async (req: Request, res: Response) => {
+        if (!req.user) throw new AppError('Not authenticated', 401);
+
+        const name = typeof req.body?.name === 'string' ? req.body.name : 'My shopping list';
+
+        const list = await this.service.createFromBaseline(req.user.id, { name });
+        res.status(201).json(list);
+    });
+
+
     createList = catchAsync(async (req: Request, res: Response) => {
         if (!req.user) throw new AppError('Not authenticated', 401);
 
