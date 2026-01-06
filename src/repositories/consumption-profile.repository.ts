@@ -31,16 +31,18 @@ export class ConsumptionProfileRepository {
     ): Promise<ConsumptionProfile> {
         const uid = this.toObjectId(userId);
 
-        // normalize + build array (usageScore מתחיל מ-0 ב-POC/MVP)
-        const baselineItems = input.baselineItems.map((it) => ({
-            name: it.name,
-            normalizedName: normalizeName(it.name),
-            quantity: it.quantity,
-            unit: it.unit,
-            intervalDays: it.intervalDays,
-            usageScore: 0,
-            // lastPurchasedAt/lastSuggestedAt נשארים undefined
-        }));
+        const baselineItems = input.baselineItems!.map((it) => {
+            const name = it.name!;
+
+            return {
+                name,
+                normalizedName: normalizeName(name),
+                quantity: it.quantity,
+                unit: it.unit,
+                intervalDays: it.intervalDays,
+                usageScore: 0,
+            };
+        });
 
         const updated = await ConsumptionProfileMongoose.findOneAndUpdate(
             { userId: uid },
@@ -54,23 +56,28 @@ export class ConsumptionProfileRepository {
         return mapConsumptionProfile(updated);
     }
 
-    // returns null if duplicate normalizedName already exists
-    async addBaselineItem(userId: string, input: CreateBaselineItemInput): Promise<ConsumptionProfile | null> {
+    async addBaselineItem(userId: string, input: CreateBaselineItemInput) {
         const uid = this.toObjectId(userId);
-        const normalized = normalizeName(input.name);
+
+        await ConsumptionProfileMongoose.updateOne(
+            { userId: uid },
+            { $setOnInsert: { userId: uid } },
+            { upsert: true }
+        );
+
+        const name = input.name!;
+        const normalizedName = name.trim().toLowerCase().replace(/\s+/g, ' ');
 
         const updated = await ConsumptionProfileMongoose.findOneAndUpdate(
             {
                 userId: uid,
-                // ✅ atomic uniqueness guard (safe)
-                'baselineItems.normalizedName': { $ne: normalized },
+                baselineItems: { $not: { $elemMatch: { normalizedName } } },
             },
             {
-                $setOnInsert: { userId: uid },
                 $push: {
                     baselineItems: {
-                        name: input.name,
-                        normalizedName: normalized,
+                        name,
+                        normalizedName,
                         quantity: input.quantity,
                         unit: input.unit,
                         intervalDays: input.intervalDays,
@@ -78,28 +85,28 @@ export class ConsumptionProfileRepository {
                     },
                 },
             },
-            { new: true, upsert: true }
+            { new: true } // ✅ בלי upsert
         );
 
-        return updated ? mapConsumptionProfile(updated) : null;
+        if (!updated) return null; // כפול / לא נמצא
+        return mapConsumptionProfile(updated);
     }
 
-    // returns null if not found OR duplicate name (when updating name)
     async updateBaselineItem(
         userId: string,
         itemId: string,
         input: UpdateBaselineItemInput
     ): Promise<ConsumptionProfile | null> {
         const uid = this.toObjectId(userId);
+        const itemObjectId = this.toObjectId(itemId);
 
-        // ✅ prevent duplicate normalizedName when renaming
         if (input.name !== undefined) {
             const normalized = normalizeName(input.name);
 
             const dup = await ConsumptionProfileMongoose.findOne({
                 userId: uid,
                 'baselineItems.normalizedName': normalized,
-                'baselineItems._id': { $ne: itemId },
+                'baselineItems._id': { $ne: itemObjectId },
             });
 
             if (dup) return null;
@@ -118,13 +125,13 @@ export class ConsumptionProfileRepository {
         if (Object.keys(setObj).length === 0) {
             const existing = await ConsumptionProfileMongoose.findOne({
                 userId: uid,
-                'baselineItems._id': itemId,
+                'baselineItems._id': itemObjectId,
             });
             return existing ? mapConsumptionProfile(existing) : null;
         }
 
         const updated = await ConsumptionProfileMongoose.findOneAndUpdate(
-            { userId: uid, 'baselineItems._id': itemId },
+            { userId: uid, 'baselineItems._id': itemObjectId },
             { $set: setObj },
             { new: true }
         );
@@ -134,10 +141,11 @@ export class ConsumptionProfileRepository {
 
     async deleteBaselineItem(userId: string, itemId: string): Promise<ConsumptionProfile | null> {
         const uid = this.toObjectId(userId);
+        const itemObjectId = this.toObjectId(itemId);
 
         const updated = await ConsumptionProfileMongoose.findOneAndUpdate(
-            { userId: uid, 'baselineItems._id': itemId },
-            { $pull: { baselineItems: { _id: itemId } } },
+            { userId: uid, 'baselineItems._id': itemObjectId },
+            { $pull: { baselineItems: { _id: itemObjectId } } },
             { new: true }
         );
 
