@@ -10,6 +10,10 @@ export interface ShoppingItem {
     notes?: string;
     purchased: boolean;
     priority?: ItemPriority;
+
+    usageScore: number;
+    lastPurchasedAt?: Date | null;
+
     createdAt: Date;
     updatedAt: Date;
 }

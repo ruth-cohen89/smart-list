@@ -11,9 +11,14 @@ const mapItem = (item: IShoppingItemDocument): ShoppingItem => ({
     notes: item.notes,
     purchased: item.purchased,
     priority: item.priority,
+
+    usageScore: item.usageScore ?? 0,
+    lastPurchasedAt: item.lastPurchasedAt ?? null,
+
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
 });
+
 
 export const mapShoppingList = (doc: IShoppingListDocument): ShoppingList => ({
     id: String(doc._id),

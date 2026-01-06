@@ -13,20 +13,29 @@ const passwordSchema = z
     .string()
     .min(8, 'Password must be at least 8 characters');
 
-export const signupSchema = z
-    .object({
-        fullName: z.string().trim().min(2, 'Full name is required'),
-        email: emailSchema,
-        password: passwordSchema,
-    })
-    .strict();
+const requiredTrimmedString = (msg: string) =>
+    z.preprocess(
+        (v) => (typeof v === 'string' ? v.trim() : ''),
+        z.string().refine((v) => v.length > 0, { message: msg })
+    );
 
-export const loginSchema = z
-    .object({
-        email: emailSchema,
-        password: z.string().min(1, 'Password is required'),
-    })
-    .strict();
+export const signupSchema = z.object({
+    fullName: requiredTrimmedString('Full name is required'),
+    email: requiredTrimmedString('Email is required').pipe(
+        z.string().email('Invalid email')
+    ),
+    password: requiredTrimmedString('Password is required').pipe(
+        z.string().min(8, 'Password must be at least 8 characters')
+    ),
+}).strict();
+
+
+export const loginSchema = z.object({
+    email: requiredTrimmedString('Email is required').pipe(
+        z.string().email('Invalid email')
+    ),
+    password: requiredTrimmedString('Password is required'),
+}).strict();
 
 export const forgotPasswordSchema = z
     .object({

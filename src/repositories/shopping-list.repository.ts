@@ -76,13 +76,16 @@ export class ShoppingListRepository {
                 $push: {
                     items: {
                         name: input.name,
-                        // ✅ match mongoose default behavior even when input.category is undefined
                         category: input.category ?? 'other',
                         quantity: input.quantity,
                         unit: input.unit,
                         notes: input.notes,
                         priority: input.priority ?? 'medium',
                         purchased: false,
+
+
+                        usageScore: 0,
+                        lastPurchasedAt: null,
                     },
                 },
             },
@@ -147,20 +150,28 @@ export class ShoppingListRepository {
         return doc.items[0].purchased;
     }
 
-    async setItemPurchased(
-        userId: string,
-        listId: string,
-        itemId: string,
-        purchased: boolean
-    ): Promise<ShoppingList | null> {
+    async setItemPurchased(userId: string, listId: string, itemId: string, purchased: boolean): Promise<ShoppingList | null> {
         const uid = this.toObjectId(userId);
+
+        const update = purchased
+            ? {
+                $set: {
+                    'items.$.purchased': true,
+                    'items.$.lastPurchasedAt': new Date(),
+                },
+                $inc: { 'items.$.usageScore': 1 },
+            }
+            : {
+                $set: { 'items.$.purchased': false },
+            };
 
         const updated = await ShoppingListMongoose.findOneAndUpdate(
             { _id: listId, userId: uid, 'items._id': itemId },
-            { $set: { 'items.$.purchased': purchased } },
+            update,
             { new: true }
         );
 
         return updated ? mapShoppingList(updated) : null;
     }
+
 }
