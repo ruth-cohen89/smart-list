@@ -18,72 +18,72 @@ const notesSchema = z.string().trim().max(200);
 // -------------------- Lists --------------------
 
 export const createShoppingListSchema = z
-    .object({
-        name: nameSchema,
-        description: descriptionSchema.optional(),
-        status: listStatusSchema.optional(),
-        defaultCategoryOrder: z.array(categorySchema).optional(),
-    })
-    .strict();
+  .object({
+    name: nameSchema,
+    description: descriptionSchema.optional(),
+    status: listStatusSchema.optional(),
+    defaultCategoryOrder: z.array(categorySchema).optional(),
+  })
+  .strict();
 
 export const updateShoppingListSchema = z
-    .object({
-        name: nameSchema.optional(),
-        description: descriptionSchema.optional(),
-        status: listStatusSchema.optional(),
-        defaultCategoryOrder: z.array(categorySchema).optional(),
-    })
-    .strict()
-    .refine(
-        (data) =>
-            data.name !== undefined ||
-            data.description !== undefined ||
-            data.status !== undefined ||
-            data.defaultCategoryOrder !== undefined,
-        { message: 'No fields to update' }
-    );
+  .object({
+    name: nameSchema.optional(),
+    description: descriptionSchema.optional(),
+    status: listStatusSchema.optional(),
+    defaultCategoryOrder: z.array(categorySchema).optional(),
+  })
+  .strict()
+  .refine(
+    (data) =>
+      data.name !== undefined ||
+      data.description !== undefined ||
+      data.status !== undefined ||
+      data.defaultCategoryOrder !== undefined,
+    { message: 'No fields to update' },
+  );
 
 // -------------------- Items --------------------
 
 export const createItemSchema = z
-    .object({
-        name: itemNameSchema,
-        category: categorySchema.optional(),
-        quantity: quantitySchema,
-        unit: unitSchema.optional(),
-        notes: notesSchema.optional(),
-        priority: prioritySchema.optional(),
-        // purchased intentionally omitted (use toggle endpoint instead)
-    })
-    .strict();
+  .object({
+    name: itemNameSchema,
+    category: categorySchema.optional(),
+    quantity: quantitySchema,
+    unit: unitSchema.optional(),
+    notes: notesSchema.optional(),
+    priority: prioritySchema.optional(),
+    // purchased intentionally omitted (use toggle endpoint instead)
+  })
+  .strict();
 
 export const updateItemSchema = z
-    .object({
-        name: itemNameSchema.optional(),
-        category: categorySchema.optional(),
-        quantity: quantitySchema.optional(),
-        unit: unitSchema.optional(),
-        notes: notesSchema.optional(),
-        priority: prioritySchema.optional(),
-        // purchased intentionally omitted (use toggle endpoint instead)
-    })
-    .strict()
-    .refine(
-        (data) =>
-            data.name !== undefined ||
-            data.category !== undefined ||
-            data.quantity !== undefined ||
-            data.unit !== undefined ||
-            data.notes !== undefined ||
-            data.priority !== undefined,
-        { message: 'No fields to update' }
-    );
+  .object({
+    name: itemNameSchema.optional(),
+    category: categorySchema.optional(),
+    quantity: quantitySchema.optional(),
+    unit: unitSchema.optional(),
+    notes: notesSchema.optional(),
+    priority: prioritySchema.optional(),
+    // purchased intentionally omitted (use toggle endpoint instead)
+  })
+  .strict()
+  .refine(
+    (data) =>
+      data.name !== undefined ||
+      data.category !== undefined ||
+      data.quantity !== undefined ||
+      data.unit !== undefined ||
+      data.notes !== undefined ||
+      data.priority !== undefined,
+    { message: 'No fields to update' },
+  );
 
 export const updateItemPurchasedSchema = z
-    .object({
-        purchased: z.coerce.boolean(),
-    })
-    .strict();
+  .object({
+    purchased: z.coerce.boolean(),
+  })
+  .strict();
 
 export type CreateShoppingListDTO = z.infer<typeof createShoppingListSchema>;
 export type UpdateShoppingListDTO = z.infer<typeof updateShoppingListSchema>;

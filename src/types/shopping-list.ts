@@ -1,8 +1,8 @@
 import type {
-    CreateShoppingListDTO,
-    UpdateShoppingListDTO,
-    CreateItemDTO,
-    UpdateItemDTO,
+  CreateShoppingListDTO,
+  UpdateShoppingListDTO,
+  CreateItemDTO,
+  UpdateItemDTO,
 } from '../validations/shopping-list';
 
 export type CreateShoppingListInput = CreateShoppingListDTO;

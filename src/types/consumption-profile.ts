@@ -1,7 +1,7 @@
 import type {
-    CreateBaselineItemDTO,
-    UpdateBaselineItemDTO,
-    UpsertConsumptionProfileDTO,
+  CreateBaselineItemDTO,
+  UpdateBaselineItemDTO,
+  UpsertConsumptionProfileDTO,
 } from '../validations/consumption-profile';
 
 export type CreateBaselineItemInput = CreateBaselineItemDTO;

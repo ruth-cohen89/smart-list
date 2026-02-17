@@ -6,10 +6,10 @@ import { validateObjectId } from '../middlewares/validate-object-id';
 import { validateBody } from '../middlewares/validate-body';
 
 import {
-    createShoppingListSchema,
-    updateShoppingListSchema,
-    createItemSchema,
-    updateItemSchema,
+  createShoppingListSchema,
+  updateShoppingListSchema,
+  createItemSchema,
+  updateItemSchema,
 } from '../validations/shopping-list';
 
 const service = new ShoppingListService();
@@ -18,79 +18,56 @@ const controller = new ShoppingListController(service);
 const router = Router();
 
 // Lists
-router.post(
-    '/from-baseline',
-    authenticate,
-    controller.createFromBaseline
-);
+router.post('/from-baseline', authenticate, controller.createFromBaseline);
 
-router.post(
-    '/',
-    authenticate,
-    validateBody(createShoppingListSchema),
-    controller.createList
-);
+router.post('/', authenticate, validateBody(createShoppingListSchema), controller.createList);
 
-router.get(
-    '/',
-    authenticate,
-    controller.getMyLists
-);
+router.get('/', authenticate, controller.getMyLists);
 
-router.get(
-    '/:listId',
-    authenticate,
-    validateObjectId('listId'),
-    controller.getList
-);
+router.get('/:listId', authenticate, validateObjectId('listId'), controller.getList);
 
 router.patch(
-    '/:listId',
-    authenticate,
-    validateObjectId('listId'),
-    validateBody(updateShoppingListSchema),
-    controller.updateList
+  '/:listId',
+  authenticate,
+  validateObjectId('listId'),
+  validateBody(updateShoppingListSchema),
+  controller.updateList,
 );
 
-router.delete(
-    '/:listId',
-    authenticate,
-    validateObjectId('listId'),
-    controller.deleteList
-);
+router.delete('/:listId', authenticate, validateObjectId('listId'), controller.deleteList);
 
 // Items
 router.post(
-    '/:listId/items',
-    authenticate,
-    validateObjectId('listId'),
-    validateBody(createItemSchema),
-    controller.addItem
+  '/:listId/items',
+  authenticate,
+  validateObjectId('listId'),
+  validateBody(createItemSchema),
+  controller.addItem,
 );
 
 router.patch(
-    '/:listId/items/:itemId',
-    authenticate,
-    validateObjectId('listId'),
-    validateObjectId('itemId'),
-    validateBody(updateItemSchema),
-    controller.updateItem
+  '/:listId/items/:itemId',
+  authenticate,
+  validateObjectId('listId'),
+  validateObjectId('itemId'),
+  validateBody(updateItemSchema),
+  controller.updateItem,
 );
 
 router.delete(
-    '/:listId/items/:itemId',
-    authenticate,
-    validateObjectId('listId'),
-    validateObjectId('itemId'),
-    controller.deleteItem
+  '/:listId/items/:itemId',
+  authenticate,
+  validateObjectId('listId'),
+  validateObjectId('itemId'),
+  controller.deleteItem,
 );
 
 router.post(
-    '/:listId/items/:itemId/toggle',
-    authenticate,
-    validateObjectId('listId'),
-    validateObjectId('itemId'),
-    controller.toggleItemPurchased
+  '/:listId/items/:itemId/toggle',
+  authenticate,
+  validateObjectId('listId'),
+  validateObjectId('itemId'),
+  controller.toggleItemPurchased,
 );
 
 export default router;

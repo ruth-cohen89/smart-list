@@ -7,10 +7,10 @@
 
 ## Environment Variables
 
-
 Create the following files with your own values:
 
 **Development (`.env.development`)**
+
 ```env
 NODE_ENV=development
 PORT=3000
@@ -19,6 +19,7 @@ JWT_SECRET=<your-development-jwt-secret>
 ```
 
 **Production (`.env.production`)**
+
 ```env
 NODE_ENV=production
 PORT=80
@@ -29,11 +30,13 @@ JWT_SECRET=<your-production-jwt-secret>
 ## Run
 
 **Development:**
+
 ```bash
 npm run dev
 ```
 
 **Production:**
+
 ```bash
 npm run build
 npm run start

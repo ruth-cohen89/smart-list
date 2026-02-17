@@ -14,5 +14,4 @@ router.use('/consumption-profile', consumptionProfileRouter);
 
 router.use('/health', healthRouter);
 
-
 export default router;
