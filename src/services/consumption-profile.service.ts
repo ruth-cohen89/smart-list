@@ -33,6 +33,8 @@ export class ConsumptionProfileService {
   async addBaselineItem(userId: string, input: CreateBaselineItemInput) {
     const updated = await this.repo.addBaselineItem(userId, input);
     if (!updated) throw new AppError('Item already exists', 400);
+
+    await this.shoppingListService.syncBaselineToActiveList(userId, updated.baselineItems);
     return updated;
   }
 

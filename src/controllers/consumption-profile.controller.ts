@@ -5,7 +5,7 @@ import { ConsumptionProfileService } from '../services/consumption-profile.servi
 
 import type {
   CreateBaselineItemInput,
-  UpdateBaselineItemInput,
+  // UpdateBaselineItemInput,
   UpsertConsumptionProfileInput,
 } from '../types/consumption-profile';
 
@@ -34,22 +34,22 @@ export class ConsumptionProfileController {
     const dto = req.body as CreateBaselineItemInput;
     const updated = await this.service.addBaselineItem(req.user.id, dto);
 
-    res.status(200).json(updated);
+    res.status(201).json(updated);
   });
 
-  updateBaselineItem = catchAsync(async (req: Request, res: Response) => {
-    if (!req.user) throw new AppError('Not authenticated', 401);
+  // updateBaselineItem = catchAsync(async (req: Request, res: Response) => {
+  //   if (!req.user) throw new AppError('Not authenticated', 401);
 
-    const dto = req.body as UpdateBaselineItemInput;
-    const updated = await this.service.updateBaselineItem(req.user.id, req.params.itemId, dto);
+  //   const dto = req.body as UpdateBaselineItemInput;
+  //   const updated = await this.service.updateBaselineItem(req.user.id, req.params.itemId, dto);
 
-    res.status(200).json(updated);
-  });
+  //   res.status(200).json(updated);
+  // });
 
-  deleteBaselineItem = catchAsync(async (req: Request, res: Response) => {
-    if (!req.user) throw new AppError('Not authenticated', 401);
+  // deleteBaselineItem = catchAsync(async (req: Request, res: Response) => {
+  //   if (!req.user) throw new AppError('Not authenticated', 401);
 
-    const updated = await this.service.deleteBaselineItem(req.user.id, req.params.itemId);
-    res.status(200).json(updated);
-  });
+  //   const updated = await this.service.deleteBaselineItem(req.user.id, req.params.itemId);
+  //   res.status(200).json(updated);
+  // });
 }

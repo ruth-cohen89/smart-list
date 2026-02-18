@@ -2,12 +2,12 @@ import { Router } from 'express';
 import { ConsumptionProfileController } from '../controllers/consumption-profile.controller';
 import { ConsumptionProfileService } from '../services/consumption-profile.service';
 import { authenticate } from '../middlewares/authenticate';
-import { validateObjectId } from '../middlewares/validate-object-id';
+// import { validateObjectId } from '../middlewares/validate-object-id';
 import { validateBody } from '../middlewares/validate-body';
 
 import {
   createBaselineItemSchema,
-  updateBaselineItemSchema,
+  // updateBaselineItemSchema,
   upsertConsumptionProfileSchema,
 } from '../validations/consumption-profile';
 
@@ -27,6 +27,8 @@ router.put(
 router.get('/', authenticate, controller.getMyProfile);
 
 // Baseline items
+
+// Add one item quickly (e.g., after receipt scan)
 router.post(
   '/baseline-items',
   authenticate,
@@ -34,19 +36,19 @@ router.post(
   controller.addBaselineItem,
 );
 
-router.patch(
-  '/baseline-items/:itemId',
-  authenticate,
-  validateObjectId('itemId'),
-  validateBody(updateBaselineItemSchema),
-  controller.updateBaselineItem,
-);
+// router.patch(
+//   '/baseline-items/:itemId',
+//   authenticate,
+//   validateObjectId('itemId'),
+//   validateBody(updateBaselineItemSchema),
+//   controller.updateBaselineItem,
+// );
 
-router.delete(
-  '/baseline-items/:itemId',
-  authenticate,
-  validateObjectId('itemId'),
-  controller.deleteBaselineItem,
-);
+// router.delete(
+//   '/baseline-items/:itemId',
+//   authenticate,
+//   validateObjectId('itemId'),
+//   controller.deleteBaselineItem,
+// );
 
 export default router;

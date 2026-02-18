@@ -1,5 +1,5 @@
 import { User } from '../models/user.model';
-import UserModel from '../infrastructure/db/user.mongoose.model';
+import UserModel, { IUserDocument } from '../infrastructure/db/user.mongoose.model';
 import { CreateUserData, UpdateUserData } from '../types/User';
 
 export interface UserRepository {
@@ -12,7 +12,7 @@ export interface UserRepository {
 }
 
 export class UserMongoRepository implements UserRepository {
-  private mapUser(u: any): User {
+  private mapUser(u: IUserDocument): User {
     return {
       id: u._id.toString(),
       fullName: u.fullName,

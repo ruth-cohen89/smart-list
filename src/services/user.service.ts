@@ -10,14 +10,17 @@ import {
 import { User } from '../models/user.model';
 import bcrypt from 'bcrypt';
 import { AppError } from '../errors/app-error';
+import { ShoppingListService } from './shopping-list.service';
 
 export class UserService {
   private repo = userRepository;
+  private shoppingListService = new ShoppingListService();
 
   async getMe(userId: string): Promise<Omit<User, 'password'>> {
     const user = await this.repo.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...safe } = user;
     return safe;
   }
@@ -38,6 +41,7 @@ export class UserService {
     const updated = await this.repo.update(userId, updates);
     if (!updated) throw new AppError('User not found', 404);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...safe } = updated;
     return safe;
   }
@@ -78,6 +82,9 @@ export class UserService {
       role,
     });
 
+    await this.shoppingListService.getOrCreateActiveList(created.id);
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...safe } = created;
     return safe;
   }
@@ -100,6 +107,7 @@ export class UserService {
     const updated = await this.repo.update(userId, updates);
     if (!updated) throw new AppError('User not found', 404);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...safe } = updated;
     return safe;
   }

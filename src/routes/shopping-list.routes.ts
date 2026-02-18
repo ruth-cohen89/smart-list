@@ -1,3 +1,4 @@
+// shopping-lists.routes.ts
 import { Router } from 'express';
 import { ShoppingListController } from '../controllers/shopping-list.controller';
 import { ShoppingListService } from '../services/shopping-list.service';
@@ -7,7 +8,6 @@ import { validateObjectId } from '../middlewares/validate-object-id';
 import { validateBody } from '../middlewares/validate-body';
 
 import {
-  createShoppingListSchema,
   updateShoppingListSchema,
   createItemSchema,
   updateItemSchema,
@@ -19,57 +19,44 @@ const controller = new ShoppingListController(service, consumptionProfileService
 
 const router = Router();
 
-// Lists
-router.post('/from-baseline', authenticate, controller.createFromBaseline);
-
-router.post('/', authenticate, validateBody(createShoppingListSchema), controller.createList);
-
-router.get('/', authenticate, controller.getMyLists);
-
-router.get('/:listId', authenticate, validateObjectId('listId'), controller.getList);
+// Active list
+router.get('/active', authenticate, controller.getActiveList);
 
 router.patch(
-  '/:listId',
+  '/active',
   authenticate,
-  validateObjectId('listId'),
   validateBody(updateShoppingListSchema),
-  controller.updateList,
+  controller.updateActiveList,
 );
 
-router.delete('/:listId', authenticate, validateObjectId('listId'), controller.deleteList);
-
-// Items
+// Items (in active list)
 router.post(
-  '/:listId/items',
+  '/active/items',
   authenticate,
-  validateObjectId('listId'),
   validateBody(createItemSchema),
-  controller.addItem,
+  controller.addItemToActiveList,
 );
 
 router.patch(
-  '/:listId/items/:itemId',
+  '/active/items/:itemId',
   authenticate,
-  validateObjectId('listId'),
   validateObjectId('itemId'),
   validateBody(updateItemSchema),
-  controller.updateItem,
+  controller.updateItemInActiveList,
 );
 
 router.delete(
-  '/:listId/items/:itemId',
+  '/active/items/:itemId',
   authenticate,
-  validateObjectId('listId'),
   validateObjectId('itemId'),
-  controller.deleteItem,
+  controller.deleteItemFromActiveList,
 );
 
 router.post(
-  '/:listId/items/:itemId/toggle',
+  '/active/items/:itemId/toggle',
   authenticate,
-  validateObjectId('listId'),
   validateObjectId('itemId'),
-  controller.toggleItemPurchased,
+  controller.toggleItemPurchasedInActiveList,
 );
 
 export default router;

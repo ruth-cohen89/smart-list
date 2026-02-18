@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeName } from '../utils/normalize';
 
 const nameSchema = z.string().trim().min(1).max(80);
 const unitSchema = z.string().trim().max(20);
@@ -48,7 +49,7 @@ export const updateBaselineItemSchema = z
     { message: 'No fields to update' },
   );
 
-const normalizeLocal = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+//const normalizeLocal = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
 
 export const upsertConsumptionProfileSchema = z
   .object({
@@ -76,7 +77,7 @@ export const upsertConsumptionProfileSchema = z
 
     const seen = new Set<string>();
     for (const item of data.baselineItems) {
-      const key = normalizeLocal(item.name ?? '');
+      const key = normalizeName(item.name ?? '');
       if (seen.has(key)) {
         ctx.addIssue({
           code: 'custom',
