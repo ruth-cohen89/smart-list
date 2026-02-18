@@ -72,4 +72,15 @@ const ShoppingListSchema = new Schema<IShoppingListDocument>(
 
 ShoppingListSchema.index({ userId: 1, updatedAt: -1 });
 
+// Partial unique index: each user may have at most ONE list with status='active'.
+// Completed/archived lists are excluded from the constraint.
+ShoppingListSchema.index(
+  { userId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: 'active' },
+    name: 'unique_active_list_per_user',
+  },
+);
+
 export default mongoose.model<IShoppingListDocument>('ShoppingList', ShoppingListSchema);

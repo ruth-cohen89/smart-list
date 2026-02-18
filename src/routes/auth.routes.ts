@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { AuthController } from '../controllers/auth.controller';
 import { AuthService } from '../services/auth.service';
 import { AuthMongoRepository } from '../repositories/auth.repository';
+import { ShoppingListService } from '../services/shopping-list.service';
 import { authenticate } from '../middlewares/authenticate';
 import { validateBody } from '../middlewares/validate-body';
 import {
@@ -13,7 +14,8 @@ import {
 } from '../validations/auth.schemas';
 
 const repo = new AuthMongoRepository();
-const service = new AuthService(repo);
+const shoppingListService = new ShoppingListService();
+const service = new AuthService(repo, shoppingListService);
 const controller = new AuthController(service);
 
 const router = Router();

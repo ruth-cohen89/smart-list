@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { ShoppingListController } from '../controllers/shopping-list.controller';
 import { ShoppingListService } from '../services/shopping-list.service';
+import { ConsumptionProfileService } from '../services/consumption-profile.service';
 import { authenticate } from '../middlewares/authenticate';
 import { validateObjectId } from '../middlewares/validate-object-id';
 import { validateBody } from '../middlewares/validate-body';
@@ -13,7 +14,8 @@ import {
 } from '../validations/shopping-list';
 
 const service = new ShoppingListService();
-const controller = new ShoppingListController(service);
+const consumptionProfileService = new ConsumptionProfileService();
+const controller = new ShoppingListController(service, consumptionProfileService);
 
 const router = Router();
 

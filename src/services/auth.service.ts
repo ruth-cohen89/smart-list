@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { AuthRepository } from '../repositories/auth.repository';
+import { ShoppingListService } from './shopping-list.service';
 import { generateToken } from '../utils/jwt';
 import { handleInvalidCredentials } from '../errors/auth-handlers';
 import { AppError } from '../errors/app-error';
@@ -18,7 +19,10 @@ import { ForgotPasswordResponse } from '../types/auth'; // מה שנשאר שם
 const RESET_TOKEN_TTL_MIN = 15;
 
 export class AuthService {
-  constructor(private readonly repo: AuthRepository) {}
+  constructor(
+    private readonly repo: AuthRepository,
+    private readonly shoppingListService: ShoppingListService,
+  ) {}
 
   async changePassword(userId: string, input: ChangePasswordInput): Promise<{ token: string }> {
     const { currentPassword, newPassword, confirmPassword } = input;
@@ -80,6 +84,9 @@ export class AuthService {
       password: hashedPassword,
       role: 'user',
     });
+
+    // Invariant: every new user gets exactly one active shopping list.
+    await this.shoppingListService.getOrCreateActiveList(createdUser.id);
 
     const token = generateToken({
       id: createdUser.id,

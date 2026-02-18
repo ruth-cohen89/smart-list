@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AppError } from '../errors/app-error';
 import { catchAsync } from '../middlewares/catch-async';
 import { ShoppingListService } from '../services/shopping-list.service';
+import { ConsumptionProfileService } from '../services/consumption-profile.service';
 
 import {
   createShoppingListSchema,
@@ -11,15 +12,23 @@ import {
 } from '../validations/shopping-list';
 
 export class ShoppingListController {
-  constructor(private readonly service: ShoppingListService) {}
+  constructor(
+    private readonly service: ShoppingListService,
+    private readonly consumptionProfileService: ConsumptionProfileService,
+  ) {}
 
+  // Syncs the user's active list with their consumption profile baseline items.
+  // The active list is created automatically if it does not yet exist.
   createFromBaseline = catchAsync(async (req: Request, res: Response) => {
     if (!req.user) throw new AppError('Not authenticated', 401);
 
-    const name = typeof req.body?.name === 'string' ? req.body.name : 'My shopping list';
+    const profile = await this.consumptionProfileService.getOrCreate(req.user.id);
+    const name = typeof req.body?.name === 'string' ? req.body.name : undefined;
 
-    const list = await this.service.createFromBaseline(req.user.id, { name });
-    res.status(201).json(list);
+    const list = await this.service.createFromBaseline(req.user.id, profile.baselineItems, {
+      name,
+    });
+    res.status(200).json(list);
   });
 
   createList = catchAsync(async (req: Request, res: Response) => {

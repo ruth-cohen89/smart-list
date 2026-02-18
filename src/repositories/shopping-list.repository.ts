@@ -30,6 +30,38 @@ export class ShoppingListRepository {
     return mapShoppingList(created);
   }
 
+  async findActiveList(userId: string): Promise<ShoppingList | null> {
+    const uid = this.toObjectId(userId);
+    const doc = await ShoppingListMongoose.findOne({ userId: uid, status: 'active' });
+    return doc ? mapShoppingList(doc) : null;
+  }
+
+  // Atomically find the active list or create one.
+  // The partial unique index on { userId, status:'active' } guarantees at most one
+  // active list even under concurrent requests.
+  async getOrCreateActiveList(userId: string): Promise<ShoppingList> {
+    const uid = this.toObjectId(userId);
+
+    const doc = await ShoppingListMongoose.findOneAndUpdate(
+      { userId: uid, status: 'active' },
+      {
+        $setOnInsert: {
+          userId: uid,
+          name: 'My Shopping List',
+          status: 'active',
+          defaultCategoryOrder: [],
+          items: [],
+        },
+      },
+      { upsert: true, new: true },
+    );
+
+    // findOneAndUpdate with upsert + new:true always returns a document
+    if (!doc) throw new Error('getOrCreateActiveList: unexpected null document');
+
+    return mapShoppingList(doc);
+  }
+
   async findListsByUser(userId: string): Promise<ShoppingList[]> {
     const uid = this.toObjectId(userId);
 
