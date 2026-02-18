@@ -5,7 +5,6 @@ const unitSchema = z.string().trim().max(20);
 const intervalDaysSchema = z.coerce.number().int().min(1).max(365);
 const quantitySchema = z.coerce.number().min(1);
 
-// ✅ CREATE item: make required fields optional, enforce required via superRefine
 export const createBaselineItemSchema = z
   .object({
     name: nameSchema.optional(),
@@ -32,7 +31,6 @@ export const createBaselineItemSchema = z
     }
   });
 
-// ✅ UPDATE item: same as before (but keep your "No fields to update")
 export const updateBaselineItemSchema = z
   .object({
     name: nameSchema.optional(),
@@ -49,8 +47,6 @@ export const updateBaselineItemSchema = z
       data.intervalDays !== undefined,
     { message: 'No fields to update' },
   );
-
-// ---- Profile upsert stays as you already fixed ----
 
 const normalizeLocal = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
 

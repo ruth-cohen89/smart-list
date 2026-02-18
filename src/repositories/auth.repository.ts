@@ -1,5 +1,5 @@
 import { User } from '../models/user.model';
-import UserModel from '../infrastructure/db/user.mongoose.model';
+import UserModel, { IUserDocument } from '../infrastructure/db/user.mongoose.model';
 import { SignupData } from '../types/auth';
 import { AppError } from '../errors/app-error';
 
@@ -17,7 +17,7 @@ export interface AuthRepository {
 }
 
 export class AuthMongoRepository implements AuthRepository {
-  private mapUser(u: any): User {
+  private mapUser(u: IUserDocument): User {
     return {
       id: u._id.toString(),
       fullName: u.fullName,
