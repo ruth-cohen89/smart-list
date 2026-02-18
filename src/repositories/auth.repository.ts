@@ -103,11 +103,7 @@ export class AuthMongoRepository implements AuthRepository {
   }
 
   async signUp(user: SignupData): Promise<User> {
-    try {
-      const created = await UserModel.create({ ...user });
-      return this.mapUser(created);
-    } catch (err: any) {
-      throw err;
-    }
+    const created = await UserModel.create({ ...user });
+    return this.mapUser(created);
   }
 }
