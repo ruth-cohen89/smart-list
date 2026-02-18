@@ -139,7 +139,7 @@ export class ShoppingListRepository {
     const uid = this.toObjectId(userId);
 
     // Only set provided fields
-    const setObj: Record<string, any> = {};
+    const setObj: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(input)) {
       // Skip undefined to avoid writing undefined into DB
       if (v === undefined) continue;
