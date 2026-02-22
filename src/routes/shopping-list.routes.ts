@@ -53,10 +53,17 @@ router.delete(
 );
 
 router.post(
-  '/active/items/:itemId/toggle',
+  '/active/items/:itemId/purchase',
   authenticate,
   validateObjectId('itemId'),
-  controller.toggleItemPurchasedInActiveList,
+  controller.purchaseItemInActiveList,
 );
+
+// router.post(
+//   '/active/items/:itemId/toggle',
+//   authenticate,
+//   validateObjectId('itemId'),
+//   controller.toggleItemPurchasedInActiveList,
+// );
 
 export default router;

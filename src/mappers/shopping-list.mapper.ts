@@ -11,11 +11,7 @@ const mapItem = (item: IShoppingItemDocument): ShoppingItem => ({
   quantity: item.quantity,
   unit: item.unit,
   notes: item.notes,
-  purchased: item.purchased,
   priority: item.priority,
-
-  usageScore: item.usageScore ?? 0,
-  lastPurchasedAt: item.lastPurchasedAt ?? null,
 
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,

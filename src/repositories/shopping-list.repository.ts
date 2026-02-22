@@ -15,6 +15,24 @@ export class ShoppingListRepository {
     return new Types.ObjectId(id);
   }
 
+  async getItemById(
+    userId: string,
+    listId: string,
+    itemId: string,
+  ): Promise<{ id: string; name: string } | null> {
+    const uid = this.toObjectId(userId);
+
+    const doc = await ShoppingListMongoose.findOne(
+      { _id: listId, userId: uid, 'items._id': itemId },
+      { 'items.$': 1 },
+    );
+
+    const it = doc?.items?.[0];
+    if (!it) return null;
+
+    return { id: String(it._id), name: it.name };
+  }
+
   async createList(userId: string, input: CreateShoppingListInput): Promise<ShoppingList> {
     const uid = this.toObjectId(userId);
 
@@ -117,10 +135,6 @@ export class ShoppingListRepository {
             unit: input.unit,
             notes: input.notes,
             priority: input.priority ?? 'medium',
-            purchased: false,
-
-            usageScore: 0,
-            lastPurchasedAt: null,
           },
         },
       },
@@ -177,48 +191,49 @@ export class ShoppingListRepository {
     return updated ? mapShoppingList(updated) : null;
   }
 
-  async getItemPurchasedState(
-    userId: string,
-    listId: string,
-    itemId: string,
-  ): Promise<boolean | null> {
-    const uid = this.toObjectId(userId);
+  // For purchased state, we have removed the purchased state from the model
+  // async getItemPurchasedState(
+  //   userId: string,
+  //   listId: string,
+  //   itemId: string,
+  // ): Promise<boolean | null> {
+  //   const uid = this.toObjectId(userId);
 
-    const doc = await ShoppingListMongoose.findOne(
-      { _id: listId, userId: uid, 'items._id': itemId },
-      { 'items.$': 1 },
-    );
+  //   const doc = await ShoppingListMongoose.findOne(
+  //     { _id: listId, userId: uid, 'items._id': itemId },
+  //     { 'items.$': 1 },
+  //   );
 
-    if (!doc || !doc.items?.[0]) return null;
-    return doc.items[0].purchased;
-  }
+  //   if (!doc || !doc.items?.[0]) return null;
+  //   return doc.items[0].purchased;
+  // }
 
-  async setItemPurchased(
-    userId: string,
-    listId: string,
-    itemId: string,
-    purchased: boolean,
-  ): Promise<ShoppingList | null> {
-    const uid = this.toObjectId(userId);
+  // async setItemPurchased(
+  //   userId: string,
+  //   listId: string,
+  //   itemId: string,
+  //   purchased: boolean,
+  // ): Promise<ShoppingList | null> {
+  //   const uid = this.toObjectId(userId);
 
-    const update = purchased
-      ? {
-          $set: {
-            'items.$.purchased': true,
-            'items.$.lastPurchasedAt': new Date(),
-          },
-          $inc: { 'items.$.usageScore': 1 },
-        }
-      : {
-          $set: { 'items.$.purchased': false },
-        };
+  //   const update = purchased
+  //     ? {
+  //         $set: {
+  //           'items.$.purchased': true,
+  //           'items.$.lastPurchasedAt': new Date(),
+  //         },
+  //         $inc: { 'items.$.usageScore': 1 },
+  //       }
+  //     : {
+  //         $set: { 'items.$.purchased': false },
+  //       };
 
-    const updated = await ShoppingListMongoose.findOneAndUpdate(
-      { _id: listId, userId: uid, 'items._id': itemId },
-      update,
-      { new: true },
-    );
+  //   const updated = await ShoppingListMongoose.findOneAndUpdate(
+  //     { _id: listId, userId: uid, 'items._id': itemId },
+  //     update,
+  //     { new: true },
+  //   );
 
-    return updated ? mapShoppingList(updated) : null;
-  }
+  //   return updated ? mapShoppingList(updated) : null;
+  // }
 }

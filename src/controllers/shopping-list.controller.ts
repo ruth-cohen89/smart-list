@@ -14,16 +14,33 @@ import {
 export class ShoppingListController {
   constructor(
     private readonly service: ShoppingListService,
-    // kept for future (baseline sync etc.) - not used in MVP routes right now
     private readonly consumptionProfileService: ConsumptionProfileService,
   ) {}
 
   getActiveList = catchAsync(async (req: Request, res: Response) => {
     if (!req.user) throw new AppError('Not authenticated', 401);
 
-    const list = await this.service.getOrCreateActiveList(req.user.id);
-    res.status(200).json(list);
+    // 1) Load baseline (source of truth for due/soon)
+    const profile = await this.consumptionProfileService.getOrCreate(req.user.id);
+
+    // 2) Sync only DUE items into the active list
+    const active = await this.service.syncBaselineToActiveList(req.user.id, profile.baselineItems);
+
+    // 3) Compute SOON suggestions (no DB writes)
+    const soonSuggestions = this.service.computeSoonSuggestions(active, profile.baselineItems, 3);
+
+    res.status(200).json({
+      activeList: active,
+      soonSuggestions,
+    });
   });
+
+  // getActiveList = catchAsync(async (req: Request, res: Response) => {
+  //   if (!req.user) throw new AppError('Not authenticated', 401);
+
+  //   const list = await this.service.getOrCreateActiveList(req.user.id);
+  //   res.status(200).json(list);
+  // });
 
   updateActiveList = catchAsync(async (req: Request, res: Response) => {
     if (!req.user) throw new AppError('Not authenticated', 401);
@@ -60,11 +77,17 @@ export class ShoppingListController {
     res.status(200).json(updated);
   });
 
-  toggleItemPurchasedInActiveList = catchAsync(async (req: Request, res: Response) => {
+  purchaseItemInActiveList = catchAsync(async (req, res) => {
     if (!req.user) throw new AppError('Not authenticated', 401);
-
-    const updated = await this.service.togglePurchasedInActiveList(req.user.id, req.params.itemId);
-
+    const updated = await this.service.purchaseItemInActiveList(req.user.id, req.params.itemId);
     res.status(200).json(updated);
   });
+
+  // toggleItemPurchasedInActiveList = catchAsync(async (req: Request, res: Response) => {
+  //   if (!req.user) throw new AppError('Not authenticated', 401);
+
+  //   const updated = await this.service.togglePurchasedInActiveList(req.user.id, req.params.itemId);
+
+  //   res.status(200).json(updated);
+  // });
 }

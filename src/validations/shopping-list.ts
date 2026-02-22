@@ -79,14 +79,14 @@ export const updateItemSchema = z
     { message: 'No fields to update' },
   );
 
-export const updateItemPurchasedSchema = z
-  .object({
-    purchased: z.coerce.boolean(),
-  })
-  .strict();
+// export const updateItemPurchasedSchema = z
+//   .object({
+//     purchased: z.coerce.boolean(),
+//   })
+//   .strict();
 
 export type CreateShoppingListDTO = z.infer<typeof createShoppingListSchema>;
 export type UpdateShoppingListDTO = z.infer<typeof updateShoppingListSchema>;
 export type CreateItemDTO = z.infer<typeof createItemSchema>;
 export type UpdateItemDTO = z.infer<typeof updateItemSchema>;
-export type UpdateItemPurchasedDTO = z.infer<typeof updateItemPurchasedSchema>;
+// export type UpdateItemPurchasedDTO = z.infer<typeof updateItemPurchasedSchema>;

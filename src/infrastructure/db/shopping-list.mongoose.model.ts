@@ -9,13 +9,7 @@ export interface IShoppingItemDocument extends Document {
   quantity: number;
   unit?: string;
   notes?: string;
-  purchased: boolean;
   priority?: ItemPriority;
-
-  // ✅ added
-  lastPurchasedAt: Date | null;
-  usageScore: number;
-
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,11 +36,7 @@ const ShoppingItemSchema = new Schema<IShoppingItemDocument>(
     quantity: { type: Number, required: true, min: 1 },
     unit: { type: String, trim: true, maxlength: 20 },
     notes: { type: String, trim: true, maxlength: 200 },
-    purchased: { type: Boolean, default: false },
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
-
-    lastPurchasedAt: { type: Date, default: null },
-    usageScore: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true },
 );
