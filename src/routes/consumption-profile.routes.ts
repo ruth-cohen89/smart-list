@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { ConsumptionProfileController } from '../controllers/consumption-profile.controller';
 import { ConsumptionProfileService } from '../services/consumption-profile.service';
 import { authenticate } from '../middlewares/authenticate';
-// import { validateObjectId } from '../middlewares/validate-object-id';
+import { validateObjectId } from '../middlewares/validate-object-id';
 import { validateBody } from '../middlewares/validate-body';
 
 import {
@@ -44,11 +44,11 @@ router.post(
 //   controller.updateBaselineItem,
 // );
 
-// router.delete(
-//   '/baseline-items/:itemId',
-//   authenticate,
-//   validateObjectId('itemId'),
-//   controller.deleteBaselineItem,
-// );
+router.delete(
+  '/baseline-items/:itemId',
+  authenticate,
+  validateObjectId('itemId'),
+  controller.deleteBaselineItem,
+);
 
 export default router;

@@ -172,8 +172,9 @@ export class ConsumptionProfileRepository {
 
       const dup = await ConsumptionProfileMongoose.findOne({
         userId: uid,
-        'baselineItems.normalizedName': normalized,
-        'baselineItems._id': { $ne: itemId },
+        baselineItems: {
+          $elemMatch: { normalizedName: normalized, _id: { $ne: itemId } },
+        },
       });
 
       if (dup) return null;

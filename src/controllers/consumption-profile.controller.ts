@@ -46,10 +46,10 @@ export class ConsumptionProfileController {
   //   res.status(200).json(updated);
   // });
 
-  // deleteBaselineItem = catchAsync(async (req: Request, res: Response) => {
-  //   if (!req.user) throw new AppError('Not authenticated', 401);
+  deleteBaselineItem = catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError('Not authenticated', 401);
 
-  //   const updated = await this.service.deleteBaselineItem(req.user.id, req.params.itemId);
-  //   res.status(200).json(updated);
-  // });
+    const updated = await this.service.deleteBaselineItem(req.user.id, req.params.itemId);
+    res.status(200).json(updated);
+  });
 }
