@@ -9,23 +9,35 @@ import { AppError } from '../errors/app-error';
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  // PDFs can embed fonts and images — allow up to 20 MB. Images keep the 20 MB cap too.
+  limits: { files: 2, fileSize: 20 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype === 'application/pdf') {
-      return cb(new AppError('PDF not supported yet', 400));
+    const isPdf =
+      file.mimetype === 'application/pdf' ||
+      file.originalname.toLowerCase().endsWith('.pdf');
+    if (isPdf || file.mimetype.startsWith('image/')) {
+      return cb(null, true);
     }
-    if (!file.mimetype.startsWith('image/')) {
-      return cb(new AppError('Unsupported file type', 400));
-    }
-    cb(null, true);
+    cb(new AppError('Unsupported file type — upload an image or PDF', 400));
   },
 });
 
-// Wraps multer so LIMIT_FILE_SIZE becomes a proper 413 AppError.
-function uploadSingle(req: Request, res: Response, next: NextFunction): void {
-  upload.single('file')(req, res, (multerErr) => {
-    if (multerErr instanceof MulterError && multerErr.code === 'LIMIT_FILE_SIZE') {
-      return next(new AppError('File too large (max 10 MB)', 413));
+function uploadFiles(req: Request, res: Response, next: NextFunction): void {
+  upload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'files', maxCount: 2 },
+  ])(req, res, (multerErr) => {
+    if (multerErr instanceof MulterError) {
+      switch (multerErr.code) {
+        case 'LIMIT_FILE_SIZE':
+          return next(new AppError('File too large (max 20 MB per file)', 413));
+        case 'LIMIT_FILE_COUNT':
+          return next(new AppError('Too many files — upload at most 2 files', 400));
+        case 'LIMIT_UNEXPECTED_FILE':
+          return next(new AppError('Unexpected field — use field name "file" or "files"', 400));
+        default:
+          return next(new AppError('File upload error', 400));
+      }
     }
     next(multerErr);
   });
@@ -38,6 +50,6 @@ const controller = new ReceiptController(service);
 
 const router = Router();
 
-router.post('/upload', authenticate, uploadSingle, controller.uploadReceipt);
+router.post('/upload', authenticate, uploadFiles, controller.uploadReceipt);
 
 export default router;

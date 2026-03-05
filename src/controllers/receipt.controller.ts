@@ -14,9 +14,14 @@ export class ReceiptController {
   uploadReceipt = catchAsync(async (req: Request, res: Response) => {
     const userId = getUserId(req);
 
-    if (!req.file) throw new AppError('File is required', 400);
+    const fieldMap = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const uploadedFiles = [
+      ...(fieldMap?.['file'] ?? []),
+      ...(fieldMap?.['files'] ?? []),
+    ];
+    if (uploadedFiles.length === 0) throw new AppError('At least one image is required', 400);
 
-    const result = await this.service.uploadReceipt(userId, req.file);
+    const result = await this.service.uploadReceipt(userId, uploadedFiles);
 
     res.status(201).json(result);
   });

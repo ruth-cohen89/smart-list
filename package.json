@@ -42,6 +42,7 @@
   "dependencies": {
     "@google-cloud/vision": "^5.3.4",
     "bcrypt": "^6.0.0",
+    "canvas": "^3.2.1",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "express": "^5.2.1",
@@ -50,6 +51,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.0.1",
     "multer": "^2.0.2",
+    "pdfjs-dist": "^5.5.207",
     "zod": "^4.2.1"
   }
 }
