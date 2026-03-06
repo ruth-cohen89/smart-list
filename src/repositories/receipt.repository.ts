@@ -26,4 +26,13 @@ export class ReceiptRepository {
 
     return mapReceipt(doc);
   }
+
+  async findByIdAndUser(receiptId: string, userId: string): Promise<Receipt | null> {
+    const doc = await ReceiptMongoose.findOne({
+      _id: receiptId,
+      userId: this.toObjectId(userId),
+    });
+
+    return doc ? mapReceipt(doc) : null;
+  }
 }

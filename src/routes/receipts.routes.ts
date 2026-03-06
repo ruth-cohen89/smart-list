@@ -2,9 +2,13 @@ import { Router, Request, Response, NextFunction } from 'express';
 import multer, { MulterError } from 'multer';
 import { ReceiptController } from '../controllers/receipt.controller';
 import { ReceiptService } from '../services/receipt.service';
+import { ReceiptMatchService } from '../services/receipt-match.service';
 import { ReceiptRepository } from '../repositories/receipt.repository';
+import { ShoppingListRepository } from '../repositories/shopping-list.repository';
+import { ConsumptionProfileRepository } from '../repositories/consumption-profile.repository';
 import { GoogleVisionOcrProvider } from '../infrastructure/ocr/google-vision-ocr.provider';
 import { authenticate } from '../middlewares/authenticate';
+import { validateObjectId } from '../middlewares/validate-object-id';
 import { AppError } from '../errors/app-error';
 
 const upload = multer({
@@ -45,11 +49,15 @@ function uploadFiles(req: Request, res: Response, next: NextFunction): void {
 
 const ocrProvider = new GoogleVisionOcrProvider();
 const receiptRepo = new ReceiptRepository();
+const shoppingListRepo = new ShoppingListRepository();
+const consumptionRepo = new ConsumptionProfileRepository();
 const service = new ReceiptService(ocrProvider, receiptRepo);
-const controller = new ReceiptController(service);
+const matchService = new ReceiptMatchService(receiptRepo, shoppingListRepo, consumptionRepo);
+const controller = new ReceiptController(service, matchService);
 
 const router = Router();
 
 router.post('/upload', authenticate, uploadFiles, controller.uploadReceipt);
+router.post('/:receiptId/match-items', authenticate, validateObjectId('receiptId'), controller.matchItems);
 
 export default router;

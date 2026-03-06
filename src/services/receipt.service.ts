@@ -55,13 +55,12 @@ const STOPWORDS = [
   'סהכ',
   'סהייכ',
   'סהיכ',
-  'מעמ', // מע"מ without punctuation
+  'מעמ',
   'ביניים',
   'קניה',
   'עהיף',
 ];
 
-// Bidi control characters injected by RTL OCR engines (LRM, RLM, LRE…PDI).
 const BIDI_RE = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
 // Letters
@@ -69,7 +68,7 @@ const HAS_LETTERS_RE = /[a-zA-Z\u05D0-\u05EA]/;
 const HAS_HEBREW_RE = /[\u05D0-\u05EA]/;
 
 // --- Noise pattern guards ---
-const STARS_RE = /\*{4}/; // credit card masking
+const STARS_RE = /\*{4}/;
 const DATE_RE = /\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/;
 const ZERO_PRICE_LINE_RE = /^0[.,]00\s*₪?/;
 const JUNK_CHARS_RE = /[()[\]:!@#$%^&]/;
@@ -77,11 +76,44 @@ const JUNK_CHARS_RE = /[()[\]:!@#$%^&]/;
 // --- Barcode helpers ---
 const BARCODE_ONLY_RE = /^\d{12,14}$/;
 
-// Table header signals for PHOTO/HYBRID receipts (prevents header/address lines becoming items)
+// Table header signals
 const ITEM_TABLE_HEADER_RE = /(תיאור|מחיר|כמות|קוד\s*פריט|קוד\s*מוצר|ברקוד|סה"כ|סה״כ|לתשלום|לתשלם)/;
 
-// Strip punctuation characters that OCR renders inconsistently (geresh, gershayim, quotes).
-// Used to compare lines against stopwords/meta robustly.
+const HEADER_EXACT_TERMS = [
+  'תיאור',
+  'קוד פריט',
+  'קוד מוצר',
+  'כמות',
+  'מחיר',
+  'סהכ',
+  'סה"כ',
+  'סה״כ',
+  'כמות מחיר',
+  'כמות * מחיר',
+  'מספר',
+  'סוג',
+  'רגיל',
+  'מקור',
+  'לכבוד',
+  'לבור',
+  'נוקור',
+  'חברה',
+  'אמצעי תשלום',
+];
+
+const UNIT_ONLY_RE = /^(?:ליח|יח|יח׳|יח'|לקג|לק"ג|קג|ק"ג|לקייג)$/i;
+const PRICE_ONLY_RE = /^₪?\s*-?\d{1,4}(?:[.,]\d{1,2})?\s*₪?$/;
+const WEIGHT_NAME_RE = /^\d+(?:[.,]\d{1,3})\s+(.+)$/;
+const PURE_NUMERIC_LINE_RE = /^[\d\s.,₪/*xX×-]+$/;
+const PROMO_HINT_RE = /(מבצע|הנחת|זיכוי|פיקדון|חסכת|כולל|מוגבל|מעל\s+\d|ב\d)/;
+const PRODUCT_WORD_HINT_RE =
+  /(עוף|שוקולד|לחם|שום|בצל|בטעם|גבינת|גבינה|שמנת|מארז|דו|כפול|מגבות|ממחטות|משקה|אנרגיה|עוגת|שמרים|יין|רזרב|גולד|קברנה|לימון|אבוקדו|בטטה|קישוא|פריכיות|דוריטוס|בייגלה|צדר|יוגטה|שניצל|לבבות|דובונים|אגרול|חטיף|חלב|גאודה|רביעיה|סודה|מקסי|תפוצ|אצבעות)/;
+
+// --- Additional guards for header/start detection ---
+const MONEY_RE = /\d{1,4}[.,]\d{1,2}/;
+const ADDRESS_RE =
+  /(ירושלים|תל אביב|תלאביב|חיפה|רח['"]?|רחוב|בע"מ|בעמ|טלפון|תאריך מסמך|חשבורית|חשבונית|קופה|עובד|מס[./]?\s*קבלה|מסמך)/i;
+
 function normalizeForStopword(s: string): string {
   return s
     .replace(BIDI_RE, '')
@@ -92,20 +124,19 @@ function normalizeForStopword(s: string): string {
 }
 
 const _normalizedStopwords = STOPWORDS.map(normalizeForStopword);
+const _normalizedHeaderTerms = HEADER_EXACT_TERMS.map(normalizeForStopword);
 
 function hasStopword(line: string): boolean {
   const norm = normalizeForStopword(line);
   return _normalizedStopwords.some((w) => norm.includes(w));
 }
 
-// Signals the start of the totals / payment section — stop collecting here.
 const TOTALS_SECTION_RE = /(סה"כ|סה״כ|סהכ|סהייכ|סהיכ|לתשלום|לתשלם|subtotal|total\b|עודף|change\b)/i;
 
 function isTotalsSection(line: string): boolean {
   return TOTALS_SECTION_RE.test(line) || TOTALS_SECTION_RE.test(normalizeForStopword(line));
 }
 
-// --- Meta lines (store/transaction header/footer) ---
 const META_HE_RE =
   /(קבלה|מספר|קופה|עובד|סניף|תאריך|שעה|טלפון|מע"מ|מעמ|בעמ|סה"כ|סה״כ|סהכ|סהייכ|סהיכ|לתשלום|לתשלם|אשראי|מזומן|עודף|כרטיס|חשבון|פריט|כמות)/;
 const META_EN_RE =
@@ -118,7 +149,6 @@ function isMetaLine(line: string): boolean {
 }
 
 function stripBarcodes(line: string): string {
-  // remove barcode-like tokens from within a line (keeps other text)
   return line
     .replace(/\b\d{12,14}\b/g, '')
     .replace(/\s+/g, ' ')
@@ -126,7 +156,6 @@ function stripBarcodes(line: string): string {
 }
 
 function isDiscountLine(line: string): boolean {
-  // discount like "-2.30", "-6.00", "3.00-", "₪ -2.90"
   return /-\s*\d+(?:[.,]\d{2})|\d+(?:[.,]\d{2})\s*-/.test(line);
 }
 
@@ -134,7 +163,6 @@ function isValidProductName(name: string): boolean {
   return name.length >= 2 && !JUNK_CHARS_RE.test(name);
 }
 
-// Strip bidi control chars, collapse whitespace.
 function normalizeLine(line: string): string {
   return line.replace(BIDI_RE, '').replace(/\s+/g, ' ').trim();
 }
@@ -157,22 +185,13 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/**
- * Detects a "pure" discount line: just a negative amount, no product name.
- * Anchored (^...$) so mid-sentence negatives in product names are never matched.
- * Lines with Hebrew labels like "הנחה -2.00" are caught earlier by hasStopword
- * and never reach this function — that is intentional (totals discounts must
- * not be applied to items).
- */
 function extractDiscountAmount(line: string): number | null {
-  // Leading minus: -2.00, ₪ -2.00, -2,00
   const leading = line.match(/^₪?\s*-\s*(\d+[.,]\d{1,2})\s*$/);
   if (leading) return -parseFloat(leading[1].replace(',', '.'));
-  // Trailing minus: "2.00-", "2,00-", or prefixed "*ק/... 2.00-".
-  // Anchored at end of line only — any legitimate discount line ends with amount-.
-  // Require exactly 2 decimal digits to avoid false-positives on "1.2" fractions.
+
   const trailing = line.match(/(\d+[.,]\d{2})\s*-\s*$/);
   if (trailing) return -parseFloat(trailing[1].replace(',', '.'));
+
   return null;
 }
 
@@ -180,38 +199,23 @@ type MulResult =
   | { kind: 'weight'; unitPrice: number; weightKg: number; finalPrice: number }
   | { kind: 'qty'; qty: number; unitPrice: number; finalPrice: number };
 
-/**
- * Detects A × B or A * B multiplication lines and classifies them:
- *   — integer × decimal → quantity × unit price (qty purchase)
- *   — decimal × small decimal (≤ 5 kg) → unit price × weight (weight-sold item)
- *
- * Returns null for plain price lines, lines with no operator, or ambiguous patterns.
- * Does NOT match `x`/`X` (lowercase Latin) to avoid confusing qty-indicator "x2"
- * patterns with arithmetic multiplication.
- */
 function extractMultiplyLine(line: string): MulResult | null {
   const m = line.match(/(\d+(?:[.,]\d+)?)\s*[*×]\s*(\d+(?:[.,]\d+)?)/);
   if (!m) return null;
   const a = parseFloat(m[1].replace(',', '.'));
   const b = parseFloat(m[2].replace(',', '.'));
 
-  // Integer × decimal → quantity purchase (e.g. 2 × 3.90 = 7.80)
   const aIsInt = Number.isInteger(a) && a >= 1 && a <= 20;
   const bIsInt = Number.isInteger(b) && b >= 1 && b <= 20;
   if (aIsInt && !bIsInt) return { kind: 'qty', qty: a, unitPrice: b, finalPrice: round2(a * b) };
   if (bIsInt && !aIsInt) return { kind: 'qty', qty: b, unitPrice: a, finalPrice: round2(a * b) };
 
-  // Both decimals → weight purchase (smaller factor is the weight in kg)
   const [unitPrice, weightKg] = a > b ? [a, b] : [b, a];
-  if (weightKg > 5 || weightKg < 0.01) return null; // implausible weight
-  if (unitPrice < 0.5) return null; // implausible unit price
+  if (weightKg > 5 || weightKg < 0.01) return null;
+  if (unitPrice < 0.5) return null;
   return { kind: 'weight', unitPrice, weightKg, finalPrice: round2(unitPrice * weightKg) };
 }
 
-/**
- * Returns true for lines that represent a promotion or discount adjustment,
- * not a product name. Used by parseItemsDigital to exclude these from blocks.
- */
 function isPromoLine(line: string): boolean {
   if (/מבצע|הנחת|זיכוי/.test(line)) return true;
   if (/(\d+[.,]\d{2})\s*-\s*$/.test(line)) return true;
@@ -219,12 +223,6 @@ function isPromoLine(line: string): boolean {
   return false;
 }
 
-/**
- * Returns an explicit quantity (1..20) when the segment contains a standalone
- * integer line that is directly adjacent to a ליח / יח label line.
- * Rami Levi digital receipts print quantity and unit on separate lines:
- *   "2\nליח'" or "ליח'\n2".
- */
 function extractStandaloneQty(segment: string[]): number | undefined {
   for (let k = 0; k < segment.length; k++) {
     const m = segment[k].match(/^(\d{1,2})$/);
@@ -238,188 +236,7 @@ function extractStandaloneQty(segment: string[]): number | undefined {
   return undefined;
 }
 
-/**
- * Block-based parser for DIGITAL receipts (Rami Levi, Shufersal app, etc.).
- *
- * IMPORTANT CHANGE:
- * - When prices are disabled, we still emit product names (anchored by barcode)
- *   with quantity if available, and price undefined.
- */
-function parseItemsDigital(rawText: string): ReceiptItem[] {
-  // Normalize double-₪ OCR artifact: "₪₪7.80" → "₪7.80"
-  const text = rawText.replace(/₪₪/g, '₪');
-  const lines = text.split('\n').map(normalizeLine).filter(Boolean);
-
-  const items: ReceiptItem[] = [];
-
-  // When prices are enabled we dedupe on (normalizedName + finalPrice).
-  // When prices are disabled we dedupe on (normalizedName + segmentIndex) to avoid killing repeats.
-  const seenKeys = new Set<string>();
-
-  // ── Price pool (used only if prices enabled) ───────────────────────────────
-  interface PriceCandidate {
-    lineIdx: number;
-    price: number;
-    isShekels: boolean;
-  }
-  const pricePool: PriceCandidate[] = [];
-  const usedLineIdxs = new Set<number>();
-
-  if (ENABLE_PRICE_EXTRACTION) {
-    for (let idx = 0; idx < lines.length; idx++) {
-      const bl = lines[idx];
-      if (isTotalsSection(bl)) break;
-      if (BARCODE_ONLY_RE.test(bl)) continue;
-      if (HAS_LETTERS_RE.test(bl)) continue;
-      if (STARS_RE.test(bl) || DATE_RE.test(bl)) continue;
-      if (isPromoLine(bl)) continue;
-      const { price } = extractPrice(bl);
-      if (price !== null && price > 0 && price < 500) {
-        pricePool.push({ lineIdx: idx, price, isShekels: /^₪/.test(bl) });
-      }
-    }
-  }
-  // ───────────────────────────────────────────────────────────────────────────
-
-  let lastBarcodeIdx = -1;
-  let segmentIndex = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-
-    if (isTotalsSection(raw)) break;
-
-    // Anchor: each barcode marks the end of one item block.
-    if (!BARCODE_ONLY_RE.test(raw)) continue;
-
-    // Segment = lines strictly between the previous barcode and this barcode.
-    const prevBarcodeIdx = lastBarcodeIdx;
-    lastBarcodeIdx = i;
-
-    const segment = lines.slice(prevBarcodeIdx + 1, i);
-    if (segment.length === 0) continue;
-
-    // productName: nearest (last) qualifying Hebrew line in segment.
-    let productName: string | undefined;
-    for (let k = segment.length - 1; k >= 0; k--) {
-      const bl = segment[k];
-      if (BARCODE_ONLY_RE.test(bl)) continue;
-      if (STARS_RE.test(bl) || DATE_RE.test(bl)) continue;
-      if (hasStopword(bl)) continue;
-      if (isMetaLine(bl)) continue;
-      if (isPromoLine(bl)) continue;
-      if (!HAS_HEBREW_RE.test(bl)) continue;
-      const cleaned = cleanName(bl);
-      if (looksLikeRealName(cleaned)) {
-        productName = cleaned;
-        break;
-      }
-    }
-    if (!productName) continue;
-
-    const normalized = normalizeName(productName);
-    if (!normalized) continue;
-
-    // Quantity: explicit standalone integer (1..20) adjacent to a ליח/יח label.
-    const explicitQty = extractStandaloneQty(segment);
-    let qty: number | undefined = explicitQty;
-
-    // If prices are disabled, we STOP here (names-first).
-    if (!ENABLE_PRICE_EXTRACTION) {
-      const key = `${normalized}|seg:${segmentIndex++}`;
-      if (seenKeys.has(key)) continue;
-      seenKeys.add(key);
-
-      items.push({
-        name: productName,
-        normalizedName: normalized,
-        quantity: qty,
-      });
-      continue;
-    }
-
-    // ── Price extraction (only when enabled) ─────────────────────────────────
-    // totalPrice: MAX positive ₪-prefixed amount in segment ONLY (no backfill).
-    let totalPrice: number | undefined;
-    for (const bl of segment) {
-      const m = bl.match(/^₪(\d+(?:[.,]\d{1,2})?)/);
-      if (!m) continue;
-      const p = parseFloat(m[1].replace(',', '.'));
-      if (p > 0 && (totalPrice === undefined || p > totalPrice)) totalPrice = p;
-    }
-
-    // unitPrice: first no-letters, no-₪-prefix, non-promo decimal in segment.
-    let unitPrice: number | undefined;
-    for (const bl of segment) {
-      if (/^₪/.test(bl)) continue;
-      if (HAS_LETTERS_RE.test(bl)) continue;
-      if (BARCODE_ONLY_RE.test(bl)) continue;
-      if (isPromoLine(bl)) continue;
-      const { price } = extractPrice(bl);
-      if (price !== null && price > 0) {
-        unitPrice = price;
-        break;
-      }
-    }
-
-    // Pool backfill: only when BOTH totalPrice and unitPrice are absent.
-    let priceSource = 'none';
-    if (totalPrice === undefined && unitPrice === undefined) {
-      for (let pi = pricePool.length - 1; pi >= 0; pi--) {
-        const cand = pricePool[pi];
-        if (cand.lineIdx >= i) continue;
-        if (usedLineIdxs.has(cand.lineIdx)) continue;
-        unitPrice = cand.price;
-        priceSource = cand.isShekels ? 'pool_shekel' : 'pool_numeric';
-        usedLineIdxs.add(cand.lineIdx);
-        console.debug(
-          `[parseItemsDigital] pool backfill: barcode[${i}]="${raw}" price=${unitPrice} from line[${cand.lineIdx}]="${lines[cand.lineIdx]}" source=${priceSource}`,
-        );
-        break;
-      }
-    }
-
-    // Final price: ₪-total if present; otherwise unitPrice × qty (or just unitPrice).
-    let finalPrice: number | undefined;
-    if (totalPrice !== undefined) {
-      finalPrice = totalPrice;
-      if (priceSource === 'none') priceSource = 'segment_total';
-    } else if (unitPrice !== undefined) {
-      finalPrice = explicitQty !== undefined ? round2(unitPrice * explicitQty) : unitPrice;
-      if (priceSource === 'none')
-        priceSource = explicitQty !== undefined ? 'segment_unit_x_qty' : 'segment_unit';
-    }
-
-    if (!finalPrice || finalPrice <= 0) continue;
-
-    // Quantity inference via ratio (when no explicit qty)
-    if (qty === undefined && unitPrice && unitPrice > 0) {
-      const ratio = finalPrice / unitPrice;
-      const rounded = Math.round(ratio);
-      if (rounded >= 2 && rounded <= 20 && Math.abs(ratio - rounded) <= 0.03) {
-        qty = rounded;
-      }
-    }
-
-    const dedupeKey = `${normalized}|${finalPrice}`;
-    if (seenKeys.has(dedupeKey)) continue;
-    seenKeys.add(dedupeKey);
-
-    items.push({
-      name: productName,
-      normalizedName: normalized,
-      quantity: qty,
-      price: finalPrice,
-    });
-  }
-
-  return items;
-}
-
-// A common receipt item starts with an index/qty then text: "4 בייגלה...", "3 בסמטי..."
 const ITEM_START_RE = /^\s*\d+\s+[a-zA-Z\u05D0-\u05EA]/;
-
-// "space-decimal": 10 80 / 23 90 / 6 90
 const SPACE_DECIMAL_RE = /(-?\d{1,3})\s(\d{2})(?!\d)/;
 
 function parseSpaceDecimal(m: RegExpMatchArray): number {
@@ -431,22 +248,32 @@ function parseSpaceDecimal(m: RegExpMatchArray): number {
   return sign * (intPart + fracPart / 100);
 }
 
-/**
- * Price extraction tuned for your receipts:
- * -1) leading ₪ anchored at start of line — highest priority (digital receipts)
- * 0) number followed by ₪ (e.g., "12.90₪", "12.9₪")
- * 1) explicit "₪ <number>" (integer or decimal)
- * 2) decimals with dot/comma: 10.80 / 23,90 / 10.8 / 23,9
- * 3) space-decimal ONLY if the line also has ₪ (prevents "90 90" noise)
- */
+function hasMoneyToken(line: string): boolean {
+  return MONEY_RE.test(line) || /₪/.test(line);
+}
+
+function looksLikeStoreHeader(line: string): boolean {
+  const norm = normalizeForStopword(line);
+
+  if (!norm) return true;
+  if (ADDRESS_RE.test(line)) return true;
+
+  if (
+    /(מחסני|השוק|סופר|סניף|ירושלים|קופה|עובד|חשבורית|חשבונית|תאריך|טלפון|בעמ|מספר\s*עסקה|מספר\s*אישור)/i.test(
+      norm,
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function extractPrice(line: string): { price: number | null; lineWithoutPrice: string } {
-  // If prices are disabled, we still need lineWithoutPrice for cleanName.
-  // Return price=null but keep robust "strip" behavior by falling through.
   if (!ENABLE_PRICE_EXTRACTION) {
     return { price: null, lineWithoutPrice: line };
   }
 
-  // -1) ₪ anchored at the very start of the line.
   const leadingShekels = line.match(/^₪\s*(-?\d{1,4}(?:[.,]\d{1,2})?)/);
   if (leadingShekels) {
     const price = parseFloat(leadingShekels[1].replace(',', '.'));
@@ -454,7 +281,6 @@ function extractPrice(line: string): { price: number | null; lineWithoutPrice: s
     return { price, lineWithoutPrice };
   }
 
-  // 0) number followed by ₪
   const trailingShekels = [...line.matchAll(/(-?\d{1,4}(?:[.,]\d{1,2})?)\s*₪/g)];
   if (trailingShekels.length > 0) {
     const preferred =
@@ -469,7 +295,6 @@ function extractPrice(line: string): { price: number | null; lineWithoutPrice: s
     return { price, lineWithoutPrice };
   }
 
-  // 1) explicit ₪ before number
   const shekelMatches = [...line.matchAll(/₪\s*(-?\d{1,4}(?:[.,]\d{1,2})?)\b/g)];
   if (shekelMatches.length > 0) {
     const preferred =
@@ -484,7 +309,6 @@ function extractPrice(line: string): { price: number | null; lineWithoutPrice: s
     return { price, lineWithoutPrice };
   }
 
-  // 2) dot/comma decimals without ₪ (1 or 2 decimal digits)
   const decMatches = [...line.matchAll(/(-?\d{1,3}(?:[.,]\d{1,2}))/g)];
   if (decMatches.length > 0) {
     const isMulLine = decMatches.length > 1 && /[*×]|\b[xX]\b/.test(line);
@@ -508,7 +332,6 @@ function extractPrice(line: string): { price: number | null; lineWithoutPrice: s
     return { price, lineWithoutPrice };
   }
 
-  // 3) space-decimal ONLY if ₪ exists in line
   if (line.includes('₪')) {
     const m = line.match(SPACE_DECIMAL_RE);
     if (m) {
@@ -540,14 +363,13 @@ function cleanName(line: string): string {
   if (HAS_HEBREW_RE.test(name)) {
     name = name
       .replace(/\b[a-zA-Z]{1,4}\b/g, ' ')
-      .replace(/\b(?:NW|DUI|DON|NIN|OG|WN|WIRD)\b/gi, ' ')
+      .replace(/\b(?:NW|DUI|DON|NIN|OG|WN|WIRD|NO)\b/gi, ' ')
       .replace(/ט"?כ/g, ' ')
       .replace(/[^0-9\u05D0-\u05EA\s]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
   }
 
-  // small Hebrew stop fragments that ruin names
   name = name
     .replace(/\b(?:של)\b/g, '')
     .replace(/\s+/g, ' ')
@@ -556,76 +378,481 @@ function cleanName(line: string): string {
   return name;
 }
 
+function looksLikeHeaderOrMetaExact(line: string): boolean {
+  const norm = normalizeForStopword(cleanName(line));
+  if (!norm) return true;
+  return _normalizedHeaderTerms.includes(norm);
+}
+
+function isLikelyUnitOnly(line: string): boolean {
+  const norm = normalizeForStopword(line);
+  return UNIT_ONLY_RE.test(norm);
+}
+
+function isLikelyPriceOnly(line: string): boolean {
+  const stripped = normalizeLine(line).replace(/\s+/g, '');
+  return PRICE_ONLY_RE.test(stripped) || PURE_NUMERIC_LINE_RE.test(stripped);
+}
+
+function isLikelyMetaOrNoise(line: string): boolean {
+  if (!line) return true;
+  if (BARCODE_ONLY_RE.test(line)) return true;
+  if (STARS_RE.test(line) || DATE_RE.test(line) || ZERO_PRICE_LINE_RE.test(line)) return true;
+  if (looksLikeHeaderOrMetaExact(line)) return true;
+  if (isLikelyUnitOnly(line)) return true;
+  if (isPromoLine(line) || PROMO_HINT_RE.test(line)) return true;
+  if (hasStopword(line) || isMetaLine(line)) return true;
+  if (isDiscountLine(line)) return true;
+  if (isLikelyPriceOnly(line)) return true;
+  return false;
+}
+
+function isStrongTotalsBoundary(line: string): boolean {
+  const norm = normalizeForStopword(line);
+  if (!norm) return false;
+
+  const paymentish =
+    /(לתשלום|לתשלם|אמצעי|אשראי|מזומן|עודף|מעמ|חשבון|שלום|לחשלום|subtotal|total|change|credit|cash)/i.test(
+      norm,
+    );
+
+  const totalish = /(סהכ|סהייכ|סהיכ)/i.test(norm);
+  const hasMoney = /\d{1,4}[.,]\d{1,2}/.test(line);
+
+  if (paymentish && (hasMoney || totalish)) return true;
+  if (/^(?:לחשלום|לתשלום|לתשלם)$/.test(norm)) return true;
+  if (totalish && /(אמצעי|אשראי|מזומן|חשבון|שלום)/.test(norm)) return true;
+
+  return false;
+}
+
+function maybeExtractWeightedName(line: string): string | null {
+  const m = normalizeLine(line).match(WEIGHT_NAME_RE);
+  if (!m) return null;
+  const candidate = cleanName(m[1]);
+  if (!candidate) return null;
+  if (digitRatio(candidate) > 0.35) return null;
+  if (!looksLikeRealName(candidate)) return null;
+  return candidate;
+}
+
+function scoreProductCandidate(
+  line: string,
+  opts?: { nearBarcode?: boolean; distance?: number; allowWeightedPrefix?: boolean },
+): number {
+  const normalized = normalizeLine(line);
+  if (!normalized) return -1000;
+
+  const cleaned = cleanName(normalized);
+  if (!cleaned) return -1000;
+
+  if (looksLikeHeaderOrMetaExact(cleaned)) return -1000;
+  if (isLikelyMetaOrNoise(normalized)) return -1000;
+  if (looksLikeStoreHeader(normalized)) return -1000;
+
+  let score = 0;
+
+  if (HAS_HEBREW_RE.test(cleaned)) score += 6;
+  if (HAS_LETTERS_RE.test(cleaned)) score += 2;
+
+  const hebrewLetters = cleaned.replace(/[^\u05D0-\u05EA]/g, '').length;
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  score += Math.min(hebrewLetters, 10);
+  score += Math.min(words.length, 4);
+
+  if (cleaned.length >= 5 && cleaned.length <= 40) score += 4;
+  if (PRODUCT_WORD_HINT_RE.test(cleaned)) score += 5;
+  if (opts?.allowWeightedPrefix && maybeExtractWeightedName(normalized)) score += 5;
+
+  const ratio = digitRatio(normalized);
+  if (ratio < 0.25) score += 4;
+  else if (ratio < 0.4) score += 1;
+  else score -= 5;
+
+  if (opts?.nearBarcode) score += 4;
+  if (typeof opts?.distance === 'number') score += Math.max(0, 4 - opts.distance);
+
+  if (/^מבצע/.test(normalized)) score -= 20;
+  if (cleaned.length > 55) score -= 5;
+  if (JUNK_CHARS_RE.test(normalized)) score -= 3;
+
+  return score;
+}
+
 function looksLikeRealName(name: string): boolean {
   if (!name) return false;
-  if (name.length < 4) return false;
+  if (name.length < 3) return false;
   if (!HAS_LETTERS_RE.test(name)) return false;
   if (!isValidProductName(name)) return false;
+  if (looksLikeHeaderOrMetaExact(name)) return false;
   if (isMetaLine(name)) return false;
   if (hasStopword(name)) return false;
+  if (looksLikeStoreHeader(name)) return false;
+
   const hebrewLetters = name.replace(/[^\u05D0-\u05EA]/g, '');
   if (HAS_HEBREW_RE.test(name) && hebrewLetters.length < 2) return false;
+
   const lettersOnly = name.replace(/[^a-zA-Z\u05D0-\u05EA]/g, '');
   if (lettersOnly.length < 2) return false;
+
+  if (digitRatio(name) > 0.45) return false;
   if (name.length > 60) return false;
+
   return true;
 }
 
+function isProductLikeLine(line: string): boolean {
+  const cleaned = cleanName(line);
+  if (!cleaned) return false;
+  if (!looksLikeRealName(cleaned)) return false;
+  if (looksLikeStoreHeader(line)) return false;
+  if (isLikelyMetaOrNoise(line)) return false;
+
+  const hasProductHint = PRODUCT_WORD_HINT_RE.test(cleaned);
+  const hasMoney = hasMoneyToken(line);
+  const hasMul = !!extractMultiplyLine(line);
+  const weighted = !!maybeExtractWeightedName(line);
+
+  if (hasMoney || hasMul || weighted || hasProductHint) return true;
+
+  return false;
+}
+
+function findPrimaryStartIndex(lines: string[]): number {
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (!raw) continue;
+    if (ITEM_TABLE_HEADER_RE.test(normalizeForStopword(raw))) {
+      return i + 1;
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    if (BARCODE_ONLY_RE.test(lines[i])) {
+      return Math.max(0, i - 1);
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (!raw) continue;
+    if (looksLikeStoreHeader(raw)) continue;
+    if (isLikelyMetaOrNoise(raw)) continue;
+    if (isProductLikeLine(raw)) return i;
+  }
+
+  return 0;
+}
+
+function pushUniqueNameOnlyItem(
+  items: ReceiptItem[],
+  seen: Set<string>,
+  rawName: string,
+  quantity?: number,
+): void {
+  const name = cleanName(rawName);
+  if (!looksLikeRealName(name)) return;
+
+  const normalized = normalizeName(name);
+  if (!normalized) return;
+
+  const dupKey = `${normalized}|${quantity ?? ''}`;
+  if (seen.has(dupKey)) return;
+
+  seen.add(dupKey);
+  items.push({
+    name,
+    normalizedName: normalized,
+    quantity,
+  });
+}
+
+function findBestDigitalCandidateNearBarcode(
+  lines: string[],
+  barcodeIdx: number,
+): string | undefined {
+  let bestLine: string | undefined;
+  let bestScore = -1000;
+
+  const start = Math.max(0, barcodeIdx - 6);
+  const end = Math.min(lines.length - 1, barcodeIdx + 3);
+
+  for (let j = start; j <= end; j++) {
+    if (j === barcodeIdx) continue;
+    const raw = lines[j];
+    if (!raw) continue;
+    if (isStrongTotalsBoundary(raw)) continue;
+
+    const score = scoreProductCandidate(raw, {
+      nearBarcode: true,
+      distance: Math.abs(j - barcodeIdx),
+      allowWeightedPrefix: true,
+    });
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestLine = raw;
+    }
+  }
+
+  if (bestScore < 9) return undefined;
+
+  const weighted = bestLine ? maybeExtractWeightedName(bestLine) : null;
+  return weighted ?? (bestLine ? cleanName(bestLine) : undefined);
+}
+
+function extractLooseDigitalNames(lines: string[], seenNormalized: Set<string>): ReceiptItem[] {
+  const items: ReceiptItem[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (!raw) continue;
+    if (isStrongTotalsBoundary(raw)) break;
+    if (isLikelyMetaOrNoise(raw)) continue;
+    if (looksLikeStoreHeader(raw)) continue;
+
+    let candidate: string | null = maybeExtractWeightedName(raw);
+    if (!candidate) {
+      const score = scoreProductCandidate(raw, { allowWeightedPrefix: true });
+      if (score >= 10) candidate = cleanName(raw);
+    }
+
+    if (!candidate || !looksLikeRealName(candidate)) continue;
+
+    const normalized = normalizeName(candidate);
+    if (!normalized) continue;
+    if (seenNormalized.has(normalized)) continue;
+
+    seenNormalized.add(normalized);
+    items.push({
+      name: candidate,
+      normalizedName: normalized,
+    });
+  }
+
+  return items;
+}
+
 /**
- * PHOTO/HYBRID parser:
- * - If prices enabled: original behavior (buffer + close on price)
- * - If prices disabled: names-only inside items zone
- *
- * Key fix:
- * - Items zone opens also when we see a table header (כמות/מחיר/תיאור/קוד פריט)
- *   so we don't parse store/address/header lines as products.
+ * Block-based parser for DIGITAL receipts.
+ * Names-first when prices are disabled:
+ * - barcode neighborhood scoring (before + after barcode)
+ * - extra loose scan for weighted produce / non-barcode item lines
  */
-function parseItemsPrimary(rawText: string): ReceiptItem[] {
-  const lines = rawText.split('\n').map(normalizeLine);
+function parseItemsDigital(rawText: string): ReceiptItem[] {
+  const text = rawText.replace(/₪₪/g, '₪');
+  const lines = text.split('\n').map(normalizeLine).filter(Boolean);
 
   const items: ReceiptItem[] = [];
-  let nameBuffer = '';
-  let startedItems = false;
+  const seenKeys = new Set<string>();
+  const seenNormalized = new Set<string>();
 
-  // B3: repeated header/footer suppression across PDF pages.
-  const linesSeenByPage: Map<string, number> = new Map();
-  let currentPageLines: Set<string> = new Set();
+  interface PriceCandidate {
+    lineIdx: number;
+    price: number;
+    isShekels: boolean;
+  }
+  const pricePool: PriceCandidate[] = [];
+  const usedLineIdxs = new Set<number>();
 
-  const pushItem = (price: number | undefined, lineForQty: string, overrideQty?: number) => {
-    const name = cleanName(nameBuffer);
-    if (!looksLikeRealName(name)) return;
+  if (ENABLE_PRICE_EXTRACTION) {
+    for (let idx = 0; idx < lines.length; idx++) {
+      const bl = lines[idx];
+      if (isStrongTotalsBoundary(bl)) break;
+      if (BARCODE_ONLY_RE.test(bl)) continue;
+      if (HAS_LETTERS_RE.test(bl)) continue;
+      if (STARS_RE.test(bl) || DATE_RE.test(bl)) continue;
+      if (isPromoLine(bl)) continue;
+      const { price } = extractPrice(bl);
+      if (price !== null && price > 0 && price < 500) {
+        pricePool.push({ lineIdx: idx, price, isShekels: /^₪/.test(bl) });
+      }
+    }
+  }
 
-    const normalized = normalizeName(name);
-    if (!normalized) return;
+  let lastBarcodeIdx = -1;
+  let segmentIndex = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+
+    if (isStrongTotalsBoundary(raw)) break;
+    if (!BARCODE_ONLY_RE.test(raw)) continue;
+
+    const prevBarcodeIdx = lastBarcodeIdx;
+    lastBarcodeIdx = i;
+
+    const segment = lines.slice(prevBarcodeIdx + 1, i);
+    const explicitQty = extractStandaloneQty(segment);
+    let qty: number | undefined = explicitQty;
+
+    let productName = findBestDigitalCandidateNearBarcode(lines, i);
+
+    if (!productName) {
+      for (let k = segment.length - 1; k >= 0; k--) {
+        if (looksLikeStoreHeader(segment[k])) continue;
+        const candidate = maybeExtractWeightedName(segment[k]) ?? cleanName(segment[k]);
+        if (looksLikeRealName(candidate) && !isLikelyMetaOrNoise(segment[k])) {
+          productName = candidate;
+          break;
+        }
+      }
+    }
+
+    if (!productName) continue;
+
+    const normalized = normalizeName(productName);
+    if (!normalized) continue;
+
+    if (!ENABLE_PRICE_EXTRACTION) {
+      const dupKey = `${normalized}|${qty ?? ''}`;
+      if (seenKeys.has(dupKey)) continue;
+
+      const key = `${normalized}|seg:${segmentIndex++}`;
+      seenKeys.add(key);
+      seenKeys.add(dupKey);
+      seenNormalized.add(normalized);
+
+      items.push({
+        name: productName,
+        normalizedName: normalized,
+        quantity: qty,
+      });
+      continue;
+    }
+
+    let totalPrice: number | undefined;
+    for (const bl of segment) {
+      const m = bl.match(/^₪(\d+(?:[.,]\d{1,2})?)/);
+      if (!m) continue;
+      const p = parseFloat(m[1].replace(',', '.'));
+      if (p > 0 && (totalPrice === undefined || p > totalPrice)) totalPrice = p;
+    }
+
+    let unitPrice: number | undefined;
+    for (const bl of segment) {
+      if (/^₪/.test(bl)) continue;
+      if (HAS_LETTERS_RE.test(bl)) continue;
+      if (BARCODE_ONLY_RE.test(bl)) continue;
+      if (isPromoLine(bl)) continue;
+      const { price } = extractPrice(bl);
+      if (price !== null && price > 0) {
+        unitPrice = price;
+        break;
+      }
+    }
+
+    let priceSource = 'none';
+    if (totalPrice === undefined && unitPrice === undefined) {
+      for (let pi = pricePool.length - 1; pi >= 0; pi--) {
+        const cand = pricePool[pi];
+        if (cand.lineIdx >= i) continue;
+        if (usedLineIdxs.has(cand.lineIdx)) continue;
+        unitPrice = cand.price;
+        priceSource = cand.isShekels ? 'pool_shekel' : 'pool_numeric';
+        usedLineIdxs.add(cand.lineIdx);
+        console.debug(
+          `[parseItemsDigital] pool backfill: barcode[${i}]="${raw}" price=${unitPrice} from line[${cand.lineIdx}]="${lines[cand.lineIdx]}" source=${priceSource}`,
+        );
+        break;
+      }
+    }
+
+    let finalPrice: number | undefined;
+    if (totalPrice !== undefined) {
+      finalPrice = totalPrice;
+      if (priceSource === 'none') priceSource = 'segment_total';
+    } else if (unitPrice !== undefined) {
+      finalPrice = explicitQty !== undefined ? round2(unitPrice * explicitQty) : unitPrice;
+      if (priceSource === 'none') {
+        priceSource = explicitQty !== undefined ? 'segment_unit_x_qty' : 'segment_unit';
+      }
+    }
+
+    if (!finalPrice || finalPrice <= 0) continue;
+
+    if (qty === undefined && unitPrice && unitPrice > 0) {
+      const ratio = finalPrice / unitPrice;
+      const rounded = Math.round(ratio);
+      if (rounded >= 2 && rounded <= 20 && Math.abs(ratio - rounded) <= 0.03) {
+        qty = rounded;
+      }
+    }
+
+    const dedupeKey = `${normalized}|${finalPrice}`;
+    if (seenKeys.has(dedupeKey)) continue;
+    seenKeys.add(dedupeKey);
 
     items.push({
-      name,
-      normalizedName: normalized,
-      quantity: overrideQty !== undefined ? overrideQty : extractQuantity(lineForQty),
-      ...(price !== undefined ? { price } : {}),
-    });
-
-    nameBuffer = '';
-  };
-
-  // names-only push (no buffering, no price)
-  const pushNameOnly = (line: string) => {
-    const cleaned = cleanName(line);
-    if (!looksLikeRealName(cleaned)) return;
-    const normalized = normalizeName(cleaned);
-    if (!normalized) return;
-
-    // quantity signals (rare in photo): "x2" or similar
-    const qty = extractQuantity(line);
-
-    items.push({
-      name: cleaned,
+      name: productName,
       normalizedName: normalized,
       quantity: qty,
+      price: finalPrice,
+    });
+  }
+
+  if (!ENABLE_PRICE_EXTRACTION) {
+    const extra = extractLooseDigitalNames(lines, seenNormalized);
+    items.push(...extra);
+  }
+
+  return items;
+}
+
+/**
+ * PHOTO/HYBRID parser.
+ * Names-first mode:
+ * - starts from a safer product/table/barcode boundary
+ * - avoids collecting store header lines as products
+ * - supports weighted prefix lines like "0.96 אבוקדו"
+ */
+function parseItemsPrimary(rawText: string): ReceiptItem[] {
+  const lines = rawText.split('\n').map(normalizeLine).filter(Boolean);
+
+  const items: ReceiptItem[] = [];
+  const seen = new Set<string>();
+
+  const startIndex = findPrimaryStartIndex(lines);
+  let currentPageLines: Set<string> = new Set();
+  const linesSeenByPage: Map<string, number> = new Map();
+
+  const pushNameOnly = (rawLine: string) => {
+    const candidate = maybeExtractWeightedName(rawLine) ?? cleanName(rawLine);
+    if (!looksLikeRealName(candidate)) return;
+
+    const normalized = normalizeName(candidate);
+    if (!normalized) return;
+
+    const qty = extractQuantity(rawLine);
+    pushUniqueNameOnlyItem(items, seen, candidate, qty);
+  };
+
+  const pushPriced = (rawLine: string) => {
+    const candidate = maybeExtractWeightedName(rawLine) ?? cleanName(rawLine);
+    if (!looksLikeRealName(candidate)) return;
+
+    const normalized = normalizeName(candidate);
+    if (!normalized) return;
+
+    const { price } = extractPrice(rawLine);
+    const qty = extractQuantity(rawLine);
+    const dupKey = `${normalized}|${price ?? ''}|${qty ?? ''}`;
+
+    if (seen.has(dupKey)) return;
+    seen.add(dupKey);
+
+    const mulData = /^₪/.test(rawLine) ? null : extractMultiplyLine(rawLine);
+
+    items.push({
+      name: candidate,
+      normalizedName: normalized,
+      quantity: mulData?.kind === 'qty' ? mulData.qty : qty,
+      ...(mulData ? { price: mulData.finalPrice } : price !== null && price > 0 ? { price } : {}),
     });
   };
 
-  for (const raw of lines) {
+  for (let idx = startIndex; idx < lines.length; idx++) {
+    const raw = lines[idx];
     if (!raw) continue;
 
     if (/^---\s*PAGE\s+\d+\s*---$/.test(raw)) {
@@ -633,106 +860,34 @@ function parseItemsPrimary(rawText: string): ReceiptItem[] {
         linesSeenByPage.set(prev, (linesSeenByPage.get(prev) ?? 0) + 1);
       }
       currentPageLines = new Set();
-      nameBuffer = '';
-      startedItems = false;
       continue;
     }
 
     if (raw.length > 120) continue;
-
-    if (BARCODE_ONLY_RE.test(raw)) continue;
     if (STARS_RE.test(raw) || DATE_RE.test(raw) || ZERO_PRICE_LINE_RE.test(raw)) continue;
 
-    if (isTotalsSection(raw)) break;
+    if (isStrongTotalsBoundary(raw)) break;
 
     const normRaw = normalizeForStopword(raw);
     currentPageLines.add(normRaw);
+
     if ((linesSeenByPage.get(normRaw) ?? 0) >= 1 && (isMetaLine(raw) || hasStopword(raw))) {
       continue;
     }
 
-    // Items zone can open by header row
-    if (!startedItems && ITEM_TABLE_HEADER_RE.test(normRaw)) {
-      startedItems = true;
-      nameBuffer = '';
-      continue;
-    }
+    if (looksLikeStoreHeader(raw)) continue;
+    if (looksLikeHeaderOrMetaExact(raw)) continue;
+    if (BARCODE_ONLY_RE.test(raw)) continue;
+    if (isLikelyMetaOrNoise(raw)) continue;
 
-    if (hasStopword(raw)) continue;
-    if (isMetaLine(raw)) continue;
-
-    const line = stripBarcodes(raw);
-    if (!line) continue;
-
-    // If prices disabled: names-first extraction inside items zone only
     if (!ENABLE_PRICE_EXTRACTION) {
-      if (!startedItems) continue;
-
-      // ignore pure numeric lines / discounts / promotions
-      if (!HAS_LETTERS_RE.test(line)) continue;
-      if (digitRatio(line) > 0.65) continue;
-      if (isDiscountLine(line)) continue;
-
-      pushNameOnly(line);
+      if (!isProductLikeLine(raw)) continue;
+      pushNameOnly(raw);
       continue;
     }
 
-    // ── Original price-based path (kept) ─────────────────────────────────────
-    const { price } = extractPrice(line);
-
-    const prevStartedItems = startedItems;
-
-    // once we see a real positive price, we are in items zone
-    if (price !== null && Number.isFinite(price) && price > 0) {
-      startedItems = true;
-    }
-    if (!startedItems && /\b\d{1,4}[.,]\d{1,2}\b/.test(line)) {
-      startedItems = true;
-    }
-
-    if (!startedItems) {
-      if (price === null && HAS_LETTERS_RE.test(line) && !isMetaLine(line)) {
-        const preSeed = cleanName(line);
-        if (looksLikeRealName(preSeed)) {
-          nameBuffer = preSeed;
-        }
-      }
-      continue;
-    }
-
-    if (!prevStartedItems && HAS_LETTERS_RE.test(line)) {
-      nameBuffer = '';
-    }
-
-    const discount = extractDiscountAmount(line);
-    if (discount !== null) {
-      if (items.length > 0 && items[items.length - 1].price !== undefined) {
-        items[items.length - 1].price = Math.max(
-          0,
-          round2((items[items.length - 1].price ?? 0) + discount),
-        );
-      }
-      continue;
-    }
-
-    if (ITEM_START_RE.test(line) && nameBuffer) {
-      nameBuffer = cleanName(line);
-    } else if (HAS_LETTERS_RE.test(line) && !isMetaLine(line)) {
-      const cleaned = cleanName(line);
-      if (looksLikeRealName(cleaned)) {
-        nameBuffer = (nameBuffer ? `${nameBuffer} ${cleaned}` : cleaned).trim();
-      }
-    }
-
-    if (price !== null && Number.isFinite(price) && price > 0) {
-      if (!nameBuffer) continue;
-      const mulData = /^₪/.test(line) ? null : extractMultiplyLine(line);
-      if (mulData !== null) {
-        pushItem(mulData.finalPrice, line, mulData.kind === 'qty' ? mulData.qty : mulData.weightKg);
-      } else {
-        pushItem(price, line);
-      }
-    }
+    if (!isProductLikeLine(raw) && !hasMoneyToken(raw)) continue;
+    pushPriced(raw);
   }
 
   return items;
@@ -748,18 +903,28 @@ function parseItemsFallback(rawText: string): ReceiptItem[] {
     if (!raw) continue;
     if (BARCODE_ONLY_RE.test(raw)) continue;
     if (STARS_RE.test(raw) || DATE_RE.test(raw) || ZERO_PRICE_LINE_RE.test(raw)) continue;
-    if (isTotalsSection(raw)) break;
+    if (isStrongTotalsBoundary(raw)) break;
     if (isMetaLine(raw)) continue;
     if (hasStopword(raw)) continue;
+    if (looksLikeStoreHeader(raw)) continue;
 
     const line = stripBarcodes(raw);
     if (!line) continue;
-
     if (isDiscountLine(line)) continue;
 
-    // If prices are disabled, fallback becomes "names-only list"
     if (!ENABLE_PRICE_EXTRACTION) {
-      if (HAS_LETTERS_RE.test(line) && digitRatio(line) <= 0.55) {
+      const weighted = maybeExtractWeightedName(line);
+      if (weighted) {
+        names.push(weighted);
+        continue;
+      }
+
+      if (
+        HAS_LETTERS_RE.test(line) &&
+        digitRatio(line) <= 0.55 &&
+        !isLikelyMetaOrNoise(line) &&
+        !looksLikeStoreHeader(line)
+      ) {
         const name = cleanName(line);
         if (looksLikeRealName(name)) names.push(name);
       }
@@ -806,10 +971,8 @@ function parseItemsFallback(rawText: string): ReceiptItem[] {
 
 export function parseItems(rawText: string): ReceiptItem[] {
   const kind = detectReceiptKind(rawText);
-
   const hasLeadingShekels = /^₪{1,2}\d/m.test(rawText);
 
-  // DIGITAL: always try digital parser first (it’s anchored by barcodes/format)
   if (kind === 'DIGITAL' || (hasLeadingShekels && kind !== 'PHOTO')) {
     const digital = parseItemsDigital(rawText);
     if (digital.length > 0) return digital;
@@ -823,7 +986,6 @@ export function parseItems(rawText: string): ReceiptItem[] {
 
 // ─── Post-processing ──────────────────────────────────────────────────────────
 
-// Strips spaces and punctuation for robust substring matching.
 function normalizeForPost(s: string): string {
   return s
     .replace(BIDI_RE, '')
@@ -857,6 +1019,17 @@ const POST_META_TERMS: string[] = [
   'עהיכ',
   'לחשלום',
   'רגיל',
+  'מקור',
+  'לכבוד',
+  'לבור',
+  'נוקור',
+  'תיאור',
+  'קודפריט',
+  'כמות',
+  'מחיר',
+  'חברה',
+  'מספר',
+  'סוג',
   'total',
   'subtotal',
   'vat',
@@ -873,19 +1046,17 @@ const POST_META_TERMS: string[] = [
 
 function isPostMeta(name: string): boolean {
   const norm = normalizeForPost(name);
-  return POST_META_TERMS.some((t) => norm.includes(t));
+  return POST_META_TERMS.some((t) => norm === t || norm.includes(t));
 }
 
 export function detectReceiptKind(rawText: string): 'DIGITAL' | 'PHOTO' | 'HYBRID' {
   let score = 0;
 
-  // DIGITAL signals
   const barcodes = (rawText.match(/\b729\d{9,11}\b/g) ?? []).length;
   if (barcodes >= 3) score += 3;
   else if (barcodes >= 1) score += 1;
   if (/ליח|יח[׳']/.test(rawText)) score += 2;
 
-  // PHOTO signals: multiplication lines (unitPrice * weight or qty × price)
   const mulLines = (rawText.match(/\d+[.,]\d+\s*[*×]\s*\d+[.,]\d+/g) ?? []).length;
   if (mulLines >= 2) score -= 2;
   else if (mulLines >= 1) score -= 1;
@@ -898,20 +1069,27 @@ export function detectReceiptKind(rawText: string): 'DIGITAL' | 'PHOTO' | 'HYBRI
 export function postProcessItems(items: ReceiptItem[], rawText: string): ReceiptItem[] {
   const kind = detectReceiptKind(rawText);
 
-  // A) Drop meta / payment / summary items (all receipt types)
-  let result = items.filter((item) => !isPostMeta(item.name));
+  let result = items
+    .filter((item) => !isPostMeta(item.name))
+    .filter((item) => looksLikeRealName(item.name))
+    .filter((item) => !isLikelyMetaOrNoise(item.name))
+    .filter((item) => !looksLikeStoreHeader(item.name));
 
-  // B) Drop weak/generic names: Hebrew names need ≥ 3 Hebrew letters;
-  //    non-Hebrew names need length ≥ 4.
   result = result.filter((item) => {
     const hebrewLetters = item.name.replace(/[^\u05D0-\u05EA]/g, '');
-    if (hebrewLetters.length > 0) return hebrewLetters.length >= 3;
+    if (hebrewLetters.length > 0) return hebrewLetters.length >= 2;
     return item.name.length >= 4;
   });
 
-  // HYBRID → conservative, skip DIGITAL-only rules
+  result = result.filter((item) => {
+    const norm = normalizeForPost(item.name);
+    if (/(מחסניהשוק|ההגנה|ירושלים|קופה|עובד|תאריך|מסמך|טלפון|בעמ|לכבוד|חברה|מספר|סוג)/.test(norm)) {
+      return false;
+    }
+    return true;
+  });
+
   if (kind === 'DIGITAL') {
-    // C1) Merge "לק ג" prefix item into the following item
     const merged: ReceiptItem[] = [];
     for (let i = 0; i < result.length; i++) {
       if (normalizeForPost(result[i].name) === 'לקג' && i + 1 < result.length) {
@@ -929,12 +1107,9 @@ export function postProcessItems(items: ReceiptItem[], rawText: string): Receipt
     }
     result = merged;
 
-    // If prices are enabled, keep your existing deposit/promo filters.
     if (ENABLE_PRICE_EXTRACTION) {
-      // C2) Drop deposit lines: "פיקדון" AND price ≤ 1.5
       result = result.filter((item) => !(item.name.includes('פיקדון') && (item.price ?? 0) <= 1.5));
 
-      // C3) Drop promo / discount fragments with small price (≤ 6)
       result = result.filter((item) => {
         const norm = normalizeForPost(item.name);
         const isPromo = ['מבצע', 'הנחת', 'זיכוי'].some((kw) => norm.includes(normalizeForPost(kw)));
@@ -943,13 +1118,18 @@ export function postProcessItems(items: ReceiptItem[], rawText: string): Receipt
     }
   }
 
-  // D) De-duplicate consecutive items with same normalizedName and price (or name if no price)
   result = result.filter((item, i, arr) => {
     if (i === 0) return true;
     const prev = arr[i - 1];
+
     if (!ENABLE_PRICE_EXTRACTION) {
-      return item.normalizedName !== prev.normalizedName;
+      if (item.normalizedName !== prev.normalizedName) return true;
+
+      const prevQty = prev.quantity ?? null;
+      const currQty = item.quantity ?? null;
+      return prevQty !== currQty;
     }
+
     return !(item.normalizedName === prev.normalizedName && item.price === prev.price);
   });
 
@@ -969,6 +1149,13 @@ export class ReceiptService {
     const rawParts: string[] = [];
 
     for (const file of files) {
+      console.debug(
+        '[ReceiptService] processing file:',
+        file.originalname,
+        file.mimetype,
+        file.size,
+      );
+
       const isPdf =
         file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
 
@@ -978,18 +1165,26 @@ export class ReceiptService {
 
         const textLayerText = await extractPdfTextLayer(file.buffer);
         if (textLayerText !== null) {
-          console.debug('[ReceiptService] PDF mode: PDF_TEXT (text layer, no OCR)');
+          console.debug('[ReceiptService] PDF mode: PDF_TEXT', file.originalname);
           rawParts.push(textLayerText);
         } else {
-          console.debug('[ReceiptService] PDF mode: PDF_SCANNED (rendering + OCR)');
+          console.debug('[ReceiptService] PDF mode: PDF_SCANNED', file.originalname);
           const pageBuffers = await pdfToImageBuffers(file.buffer);
           for (let i = 0; i < pageBuffers.length; i++) {
             const { rawText } = await this.ocrProvider.extractText(pageBuffers[i]);
+            console.debug(
+              `[ReceiptService] OCR page ${i + 1} for ${file.originalname}:`,
+              rawText.slice(0, 200),
+            );
             rawParts.push(`\n\n--- PAGE ${i + 1} ---\n\n${rawText}`);
           }
         }
       } else {
         const { rawText } = await this.ocrProvider.extractText(file.buffer);
+        console.debug(
+          `[ReceiptService] OCR image for ${file.originalname}:`,
+          rawText.slice(0, 200),
+        );
         rawParts.push(rawText);
       }
     }
