@@ -50,7 +50,10 @@ export async function pdfToImageBuffers(pdfBuffer: Buffer): Promise<Buffer[]> {
   try {
     doc = await pdfjs.getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
   } catch {
-    throw new AppError('Failed to parse PDF file — file may be corrupted or password-protected', 422);
+    throw new AppError(
+      'Failed to parse PDF file — file may be corrupted or password-protected',
+      422,
+    );
   }
 
   const pageCount = Math.min(doc.numPages, MAX_PAGES);

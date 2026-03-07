@@ -9,51 +9,72 @@ import type { BaselineItem } from '../models/consumption-profile.model';
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
-export interface MatchedShoppingListItem {
-  receiptItemName: string;
-  shoppingListItemId: string;
-  shoppingListItemName: string;
+export type MatchStatus = 'autoApproved' | 'pendingConfirmation';
+
+export interface ShoppingListMatchResult {
+  status: MatchStatus;
+  itemId: string;
+  itemName: string;
+  score: number;
 }
 
-export interface UpdatedBaselineItem {
+export interface BaselineMatchResult {
+  status: MatchStatus;
+  itemId: string;
+  itemName: string;
+  score: number;
+}
+
+export interface MatchedReceiptItem {
+  receiptItemId: string;
   receiptItemName: string;
-  baselineItemId: string;
-  baselineItemName: string;
+  shoppingListMatch: ShoppingListMatchResult | null;
+  baselineMatch: BaselineMatchResult | null;
 }
 
 export interface UnmatchedReceiptItem {
+  receiptItemId: string;
   receiptItemName: string;
 }
 
 export interface MatchReceiptItemsResult {
   receiptId: string;
-  matchedShoppingListItems: MatchedShoppingListItem[];
-  updatedBaselineItems: UpdatedBaselineItem[];
+  matchedReceiptItems: MatchedReceiptItem[];
   unmatchedReceiptItems: UnmatchedReceiptItem[];
+}
+
+export interface ConfirmReceiptMatchInput {
+  receiptItemId: string;
+  shoppingListItemId?: string;
+  baselineItemId?: string;
+}
+
+export interface ConfirmReceiptMatchesInput {
+  matches: ConfirmReceiptMatchInput[];
+}
+
+export interface ConfirmedReceiptMatchResult {
+  receiptItemId: string;
+  receiptItemName: string;
+  confirmedShoppingListMatch: boolean;
+  confirmedBaselineMatch: boolean;
+}
+
+export interface ConfirmReceiptMatchesResult {
+  receiptId: string;
+  confirmedMatches: ConfirmedReceiptMatchResult[];
 }
 
 // ─── Matching utilities ───────────────────────────────────────────────────────
 
-// Tokens too noisy to contribute to a match.
-const NOISE_TOKENS = new Set([
-  'מבצע',
-  'ליח',
-  'יח',
-  'גרם',
-  'קג',
-  'קילו',
-  'מארז',
-  'פיקדון',
-  'בטעם',
-]);
+const NOISE_TOKENS = new Set(['מבצע', 'ליח', 'יח', 'גרם', 'קג', 'קילו', 'מארז', 'פיקדון', 'בטעם']);
 
-// Richer normalization for matching only — does not replace the parser's normalizeName.
 function normalizeForMatch(s: string): string {
   return s
     .trim()
     .toLowerCase()
-    .replace(/[\u200f\u200e\u202a-\u202e\u2066-\u2069]/g, '') // bidi control chars
-    .replace(/[^\w\u05d0-\u05ea\s]/g, ' ') // keep Hebrew, ASCII word chars, spaces
+    .replace(/[\u200f\u200e\u202a-\u202e\u2066-\u2069]/g, '')
+    .replace(/[^\w\u05d0-\u05ea\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .split(' ')
@@ -61,29 +82,58 @@ function normalizeForMatch(s: string): string {
     .join(' ');
 }
 
-// Minimum score to accept a match. Conservative to avoid false positives.
-const MATCH_THRESHOLD = 0.5;
+const AUTO_APPROVE_THRESHOLD = 0.9;
+const PENDING_THRESHOLD = 0.7;
 
-// Returns a score in [0, 1].
-// Strategy (in order of confidence):
-//   1. Exact normalized match           → 1.0
-//   2. One string contains the other    → 0.9
-//   3. Token overlap (common / candidate tokens) — biased so that a short
-//      candidate that is fully contained in a longer receipt string scores high.
+function getTokens(s: string): string[] {
+  return s.split(' ').filter(Boolean);
+}
+
 function matchScore(receiptNorm: string, candidateNorm: string): number {
   if (!receiptNorm || !candidateNorm) return 0;
   if (receiptNorm === candidateNorm) return 1.0;
   if (receiptNorm.includes(candidateNorm) || candidateNorm.includes(receiptNorm)) return 0.9;
 
-  const receiptTokens = new Set(receiptNorm.split(' ').filter(Boolean));
-  const candidateTokens = candidateNorm.split(' ').filter(Boolean);
+  const receiptTokens = new Set(getTokens(receiptNorm));
+  const candidateTokens = getTokens(candidateNorm);
   if (candidateTokens.length === 0) return 0;
 
   let common = 0;
   for (const t of candidateTokens) {
     if (receiptTokens.has(t)) common++;
   }
+
   return common / candidateTokens.length;
+}
+
+/**
+ * מונע auto-approve על התאמות חלקיות מסוכנות.
+ */
+function shouldForcePending(receiptNorm: string, candidateNorm: string): boolean {
+  if (!receiptNorm || !candidateNorm) return false;
+  if (receiptNorm === candidateNorm) return false;
+
+  const receiptTokens = getTokens(receiptNorm);
+  const candidateTokens = getTokens(candidateNorm);
+
+  if (
+    candidateTokens.length === 1 &&
+    receiptTokens.length > 1 &&
+    receiptTokens.includes(candidateTokens[0])
+  ) {
+    return true;
+  }
+
+  const sharedTokens = candidateTokens.filter((t) => receiptTokens.includes(t));
+  if (
+    candidateTokens.length === 1 &&
+    sharedTokens.length === 1 &&
+    receiptTokens.length > candidateTokens.length
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -95,6 +145,115 @@ export class ReceiptMatchService {
     private readonly consumptionRepo: ConsumptionProfileRepository,
   ) {}
 
+  async confirmReceiptMatches(
+    userId: string,
+    receiptId: string,
+    input: ConfirmReceiptMatchesInput,
+  ): Promise<ConfirmReceiptMatchesResult> {
+    const receipt = await this.receiptRepo.findByIdAndUser(receiptId, userId);
+    if (!receipt) throw new AppError('Receipt not found', 404);
+
+    if (!input.matches || input.matches.length === 0) {
+      throw new AppError('matches is required and must contain at least one item', 400);
+    }
+
+    const activeList = await this.shoppingListRepo.findActiveList(userId);
+    const profile = await this.consumptionRepo.getOrCreate(userId);
+
+    const usedReceiptItemIds = new Set<string>();
+    const removedShoppingListItemIds = new Set<string>();
+    const updatedBaselineNormNames = new Set<string>();
+    const usedBaselineItemIds = new Set<string>();
+
+    const confirmedMatches: ConfirmedReceiptMatchResult[] = [];
+
+    for (const match of input.matches) {
+      const { receiptItemId, shoppingListItemId, baselineItemId } = match;
+
+      if (!shoppingListItemId && !baselineItemId) {
+        throw new AppError(
+          `At least one of shoppingListItemId or baselineItemId is required for receipt item "${receiptItemId}"`,
+          400,
+        );
+      }
+
+      if (usedReceiptItemIds.has(receiptItemId)) {
+        throw new AppError(`Duplicate receiptItemId in request: "${receiptItemId}"`, 400);
+      }
+      usedReceiptItemIds.add(receiptItemId);
+
+      if (baselineItemId) {
+        if (usedBaselineItemIds.has(baselineItemId)) {
+          throw new AppError(
+            `Baseline item "${baselineItemId}" was sent more than once in the same request`,
+            400,
+          );
+        }
+        usedBaselineItemIds.add(baselineItemId);
+      }
+
+      const receiptItem = receipt.items.find((item) => item.id === receiptItemId);
+      if (!receiptItem) {
+        throw new AppError(`Receipt item not found: "${receiptItemId}"`, 404);
+      }
+
+      let confirmedShoppingListMatch = false;
+      let confirmedBaselineMatch = false;
+
+      if (shoppingListItemId) {
+        if (!activeList) {
+          throw new AppError('Active shopping list not found', 404);
+        }
+
+        if (removedShoppingListItemIds.has(shoppingListItemId)) {
+          throw new AppError(
+            `Shopping list item "${shoppingListItemId}" was sent more than once in the same request`,
+            400,
+          );
+        }
+
+        const listItem = activeList.items.find((item) => item.id === shoppingListItemId);
+        if (!listItem) {
+          throw new AppError(`Shopping list item not found: "${shoppingListItemId}"`, 404);
+        }
+
+        await this.shoppingListRepo.deleteItem(userId, activeList.id, listItem.id);
+        removedShoppingListItemIds.add(shoppingListItemId);
+        confirmedShoppingListMatch = true;
+      }
+
+      if (baselineItemId) {
+        const baselineItem = profile.baselineItems.find((item) => item.id === baselineItemId);
+        if (!baselineItem) {
+          throw new AppError(`Baseline item not found: "${baselineItemId}"`, 404);
+        }
+
+        const baselineStoredNorm = baselineItem.normalizedName ?? normalizeName(baselineItem.name);
+
+        if (!updatedBaselineNormNames.has(baselineStoredNorm)) {
+          await this.consumptionRepo.markPurchasedByNormalizedName(userId, baselineStoredNorm);
+          updatedBaselineNormNames.add(baselineStoredNorm);
+        }
+
+        confirmedBaselineMatch = true;
+      }
+
+      confirmedMatches.push({
+        receiptItemId: receiptItem.id,
+        receiptItemName: receiptItem.name,
+        confirmedShoppingListMatch,
+        confirmedBaselineMatch,
+      });
+    }
+
+    await this.receiptRepo.updateStatus(receiptId, userId, 'APPLIED');
+
+    return {
+      receiptId: receipt.id,
+      confirmedMatches,
+    };
+  }
+
   async matchReceiptItems(userId: string, receiptId: string): Promise<MatchReceiptItemsResult> {
     const receipt = await this.receiptRepo.findByIdAndUser(receiptId, userId);
     if (!receipt) throw new AppError('Receipt not found', 404);
@@ -104,93 +263,141 @@ export class ReceiptMatchService {
       this.consumptionRepo.getOrCreate(userId),
     ]);
 
-    const matchedShoppingListItems: MatchedShoppingListItem[] = [];
-    const updatedBaselineItems: UpdatedBaselineItem[] = [];
+    const matchedReceiptItems: MatchedReceiptItem[] = [];
     const unmatchedReceiptItems: UnmatchedReceiptItem[] = [];
 
-    // Track what we have already mutated in this request to stay idempotent.
-    const purchasedListItemIds = new Set<string>();
+    const removedShoppingListItemIds = new Set<string>();
     const updatedBaselineNormNames = new Set<string>();
 
     for (const receiptItem of receipt.items) {
       const receiptNorm = normalizeForMatch(receiptItem.normalizedName ?? receiptItem.name);
-      let matched = false;
 
-      // ── 1. Match against active shopping list items ─────────────────────────
+      let bestShoppingListItem: ShoppingItem | null = null;
+      let bestShoppingListScore = 0;
+
+      let bestBaselineItem: BaselineItem | null = null;
+      let bestBaselineScore = 0;
+
       if (activeList) {
-        let bestItem: ShoppingItem | null = null;
-        let bestScore = 0;
-
         for (const listItem of activeList.items) {
-          if (purchasedListItemIds.has(listItem.id)) continue; // already purchased in this run
-          const score = matchScore(receiptNorm, normalizeForMatch(listItem.name));
-          if (score > bestScore) {
-            bestScore = score;
-            bestItem = listItem;
+          if (removedShoppingListItemIds.has(listItem.id)) continue;
+
+          const candidateNorm = normalizeForMatch(listItem.name);
+          const score = matchScore(receiptNorm, candidateNorm);
+
+          if (score > bestShoppingListScore) {
+            bestShoppingListScore = score;
+            bestShoppingListItem = listItem;
           }
-        }
-
-        if (bestScore >= MATCH_THRESHOLD && bestItem) {
-          purchasedListItemIds.add(bestItem.id);
-
-          // Remove from active list — mirrors purchaseItemInActiveList behaviour.
-          await this.shoppingListRepo.deleteItem(userId, activeList.id, bestItem.id);
-
-          // Update baseline best-effort (increment usageScore + lastPurchasedAt).
-          const listItemNorm = normalizeName(bestItem.name);
-          if (!updatedBaselineNormNames.has(listItemNorm)) {
-            await this.consumptionRepo.markPurchasedByNormalizedName(userId, listItemNorm);
-            updatedBaselineNormNames.add(listItemNorm);
-          }
-
-          matchedShoppingListItems.push({
-            receiptItemName: receiptItem.name,
-            shoppingListItemId: bestItem.id,
-            shoppingListItemName: bestItem.name,
-          });
-          matched = true;
         }
       }
 
-      // ── 2. Match against baseline items ────────────────────────────────────
-      {
-        let bestItem: BaselineItem | null = null;
-        let bestScore = 0;
+      for (const bItem of profile.baselineItems) {
+        const candidateNorm = normalizeForMatch(bItem.normalizedName ?? bItem.name);
+        const score = matchScore(receiptNorm, candidateNorm);
 
-        for (const bItem of profile.baselineItems) {
-          const score = matchScore(receiptNorm, normalizeForMatch(bItem.normalizedName ?? bItem.name));
-          if (score > bestScore) {
-            bestScore = score;
-            bestItem = bItem;
-          }
+        if (score > bestBaselineScore) {
+          bestBaselineScore = score;
+          bestBaselineItem = bItem;
         }
+      }
+
+      let shoppingListMatch: ShoppingListMatchResult | null = null;
+      let baselineMatch: BaselineMatchResult | null = null;
+
+      if (bestShoppingListItem) {
+        const bestShoppingListNorm = normalizeForMatch(bestShoppingListItem.name);
+        const forcePending = shouldForcePending(receiptNorm, bestShoppingListNorm);
+
+        if (bestShoppingListScore >= AUTO_APPROVE_THRESHOLD && !forcePending) {
+          shoppingListMatch = {
+            status: 'autoApproved',
+            itemId: bestShoppingListItem.id,
+            itemName: bestShoppingListItem.name,
+            score: bestShoppingListScore,
+          };
+
+          if (activeList && !removedShoppingListItemIds.has(bestShoppingListItem.id)) {
+            removedShoppingListItemIds.add(bestShoppingListItem.id);
+            await this.shoppingListRepo.deleteItem(userId, activeList.id, bestShoppingListItem.id);
+          }
+        } else if (bestShoppingListScore >= PENDING_THRESHOLD) {
+          shoppingListMatch = {
+            status: 'pendingConfirmation',
+            itemId: bestShoppingListItem.id,
+            itemName: bestShoppingListItem.name,
+            score: bestShoppingListScore,
+          };
+        }
+      }
+
+      if (bestBaselineItem) {
+        const bestBaselineNorm = normalizeForMatch(
+          bestBaselineItem.normalizedName ?? bestBaselineItem.name,
+        );
+
+        const bestBaselineStoredNorm =
+          bestBaselineItem.normalizedName ?? normalizeName(bestBaselineItem.name);
+
+        const forcePending = shouldForcePending(receiptNorm, bestBaselineNorm);
 
         if (
-          bestScore >= MATCH_THRESHOLD &&
-          bestItem &&
-          !updatedBaselineNormNames.has(bestItem.normalizedName)
+          bestBaselineScore >= AUTO_APPROVE_THRESHOLD &&
+          !forcePending &&
+          !updatedBaselineNormNames.has(bestBaselineStoredNorm)
         ) {
-          updatedBaselineNormNames.add(bestItem.normalizedName);
-          await this.consumptionRepo.markPurchasedByNormalizedName(userId, bestItem.normalizedName);
+          baselineMatch = {
+            status: 'autoApproved',
+            itemId: bestBaselineItem.id,
+            itemName: bestBaselineItem.name,
+            score: bestBaselineScore,
+          };
 
-          updatedBaselineItems.push({
-            receiptItemName: receiptItem.name,
-            baselineItemId: bestItem.id,
-            baselineItemName: bestItem.name,
-          });
-          matched = true;
+          updatedBaselineNormNames.add(bestBaselineStoredNorm);
+          await this.consumptionRepo.markPurchasedByNormalizedName(userId, bestBaselineStoredNorm);
+        } else if (
+          bestBaselineScore >= PENDING_THRESHOLD &&
+          !updatedBaselineNormNames.has(bestBaselineStoredNorm)
+        ) {
+          baselineMatch = {
+            status: 'pendingConfirmation',
+            itemId: bestBaselineItem.id,
+            itemName: bestBaselineItem.name,
+            score: bestBaselineScore,
+          };
         }
       }
 
-      if (!matched) {
-        unmatchedReceiptItems.push({ receiptItemName: receiptItem.name });
+      if (shoppingListMatch || baselineMatch) {
+        matchedReceiptItems.push({
+          receiptItemId: receiptItem.id,
+          receiptItemName: receiptItem.name,
+          shoppingListMatch,
+          baselineMatch,
+        });
+      } else {
+        unmatchedReceiptItems.push({
+          receiptItemId: receiptItem.id,
+          receiptItemName: receiptItem.name,
+        });
       }
+    }
+
+    const hasPendingConfirmation = matchedReceiptItems.some(
+      (item) =>
+        item.shoppingListMatch?.status === 'pendingConfirmation' ||
+        item.baselineMatch?.status === 'pendingConfirmation',
+    );
+
+    const hasUnmatchedItems = unmatchedReceiptItems.length > 0;
+
+    if (!hasPendingConfirmation && !hasUnmatchedItems) {
+      await this.receiptRepo.updateStatus(receiptId, userId, 'APPLIED');
     }
 
     return {
       receiptId: receipt.id,
-      matchedShoppingListItems,
-      updatedBaselineItems,
+      matchedReceiptItems,
       unmatchedReceiptItems,
     };
   }

@@ -1,7 +1,8 @@
 import { normalizeName } from '../utils/normalize';
 import type { OcrProvider } from '../types/ocr-provider';
 import type { ReceiptRepository } from '../repositories/receipt.repository';
-import type { ReceiptItem } from '../models/receipt.model';
+import type { ReceiptItem, ReceiptItemInput } from '../models/receipt.model';
+import { AppError } from '../errors/app-error';
 
 /**
  * Feature flags:
@@ -1142,6 +1143,14 @@ export class ReceiptService {
     private readonly receiptRepo: ReceiptRepository,
   ) {}
 
+  async getReceiptById(userId: string, receiptId: string): Promise<{ receipt: Receipt }> {
+    const receipt = await this.receiptRepo.findByIdAndUser(receiptId, userId);
+    if (!receipt) {
+      throw new AppError('Receipt not found', 404);
+    }
+
+    return { receipt };
+  }
   async uploadReceipt(
     userId: string,
     files: Express.Multer.File[],
@@ -1193,9 +1202,19 @@ export class ReceiptService {
     console.debug('[ReceiptService] rawText (first 500 chars):', rawText.slice(0, 500));
     console.debug('[ReceiptService] price extraction enabled:', ENABLE_PRICE_EXTRACTION);
 
-    const items = postProcessItems(parseItems(rawText), rawText);
-    const receipt = await this.receiptRepo.createReceipt({ userId, rawText, items });
+    const parsedItems: ReceiptItemInput[] = postProcessItems(parseItems(rawText), rawText).map(
+      ({ id, ...item }) => item,
+    );
 
-    return { receiptId: receipt.id, items: receipt.items };
+    const receipt = await this.receiptRepo.createReceipt({
+      userId,
+      rawText,
+      items: parsedItems,
+    });
+
+    return {
+      receiptId: receipt.id,
+      items: receipt.items,
+    };
   }
 }

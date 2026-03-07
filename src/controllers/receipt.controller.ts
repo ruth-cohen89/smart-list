@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../errors/app-error';
 import { catchAsync } from '../middlewares/catch-async';
 import type { ReceiptService } from '../services/receipt.service';
@@ -15,14 +15,20 @@ export class ReceiptController {
     private readonly matchService: ReceiptMatchService,
   ) {}
 
+  getReceiptById = catchAsync(async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    const { receiptId } = req.params;
+
+    const result = await this.service.getReceiptById(userId, receiptId);
+
+    res.status(200).json(result);
+  });
+
   uploadReceipt = catchAsync(async (req: Request, res: Response) => {
     const userId = getUserId(req);
 
     const fieldMap = req.files as Record<string, Express.Multer.File[]> | undefined;
-    const uploadedFiles = [
-      ...(fieldMap?.['file'] ?? []),
-      ...(fieldMap?.['files'] ?? []),
-    ];
+    const uploadedFiles = [...(fieldMap?.['file'] ?? []), ...(fieldMap?.['files'] ?? [])];
     if (uploadedFiles.length === 0) throw new AppError('At least one image is required', 400);
 
     const result = await this.service.uploadReceipt(userId, uploadedFiles);
@@ -35,6 +41,17 @@ export class ReceiptController {
     const { receiptId } = req.params;
 
     const result = await this.matchService.matchReceiptItems(userId, receiptId);
+
+    res.status(200).json(result);
+  });
+  confirmMatches = catchAsync(async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+
+    const result = await this.matchService.confirmReceiptMatches(
+      userId,
+      req.params.receiptId,
+      req.body,
+    );
 
     res.status(200).json(result);
   });

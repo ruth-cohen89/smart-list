@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
-export interface IReceiptItemDocument extends Document {
+export interface IReceiptItemDocument extends Types.Subdocument {
+  _id: Types.ObjectId;
   name: string;
   normalizedName: string;
   quantity?: number;
@@ -24,7 +25,10 @@ const ReceiptItemSchema = new Schema<IReceiptItemDocument>(
     price: { type: Number, min: 0 },
     category: { type: String, trim: true },
   },
-  { timestamps: false },
+  {
+    _id: true, // אפשר גם למחוק לגמרי, זה default
+    timestamps: false,
+  },
 );
 
 const ReceiptSchema = new Schema<IReceiptDocument>(

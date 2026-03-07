@@ -2,12 +2,12 @@ import { Types } from 'mongoose';
 import ReceiptMongoose from '../infrastructure/db/receipt.mongoose.model';
 import { mapReceipt } from '../mappers/receipt.mapper';
 
-import type { Receipt, ReceiptItem } from '../models/receipt.model';
+import type { Receipt, ReceiptItemInput } from '../models/receipt.model';
 
 export interface CreateReceiptData {
   userId: string;
   rawText: string;
-  items: ReceiptItem[];
+  items: ReceiptItemInput[];
 }
 
 export class ReceiptRepository {
@@ -15,6 +15,21 @@ export class ReceiptRepository {
     return new Types.ObjectId(id);
   }
 
+  async updateStatus(
+    receiptId: string,
+    userId: string,
+    status: 'SCANNED' | 'APPLIED',
+  ): Promise<void> {
+    await ReceiptMongoose.updateOne(
+      {
+        _id: receiptId,
+        userId: this.toObjectId(userId),
+      },
+      {
+        $set: { status },
+      },
+    );
+  }
   async createReceipt(data: CreateReceiptData): Promise<Receipt> {
     const doc = await ReceiptMongoose.create({
       userId: this.toObjectId(data.userId),

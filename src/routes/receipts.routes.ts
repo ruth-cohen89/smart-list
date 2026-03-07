@@ -10,6 +10,8 @@ import { GoogleVisionOcrProvider } from '../infrastructure/ocr/google-vision-ocr
 import { authenticate } from '../middlewares/authenticate';
 import { validateObjectId } from '../middlewares/validate-object-id';
 import { AppError } from '../errors/app-error';
+import { validateBody } from '../middlewares/validate-body';
+import { confirmReceiptMatchesSchema } from '../validations/receipt.validation';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -17,8 +19,7 @@ const upload = multer({
   limits: { files: 2, fileSize: 20 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const isPdf =
-      file.mimetype === 'application/pdf' ||
-      file.originalname.toLowerCase().endsWith('.pdf');
+      file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
     if (isPdf || file.mimetype.startsWith('image/')) {
       return cb(null, true);
     }
@@ -57,7 +58,23 @@ const controller = new ReceiptController(service, matchService);
 
 const router = Router();
 
+router.get('/:receiptId', authenticate, validateObjectId('receiptId'), controller.getReceiptById);
+
 router.post('/upload', authenticate, uploadFiles, controller.uploadReceipt);
-router.post('/:receiptId/match-items', authenticate, validateObjectId('receiptId'), controller.matchItems);
+
+router.post(
+  '/:receiptId/match-items',
+  authenticate,
+  validateObjectId('receiptId'),
+  controller.matchItems,
+);
+
+router.post(
+  '/:receiptId/confirm-matches',
+  authenticate,
+  validateObjectId('receiptId'),
+  validateBody(confirmReceiptMatchesSchema),
+  controller.confirmMatches,
+);
 
 export default router;

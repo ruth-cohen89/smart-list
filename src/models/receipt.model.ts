@@ -1,8 +1,17 @@
 export type ReceiptStatus = 'SCANNED' | 'APPLIED';
 
-export interface ReceiptItem {
+export interface ReceiptItemInput {
   name: string;
   normalizedName: string;
+  quantity?: number;
+  price?: number;
+  category?: string;
+}
+
+export interface ReceiptItem {
+  id: string;
+  name: string;
+  normalizedName?: string;
   quantity?: number;
   price?: number;
   category?: string;

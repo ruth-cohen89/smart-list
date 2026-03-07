@@ -5,6 +5,7 @@ import type {
 } from '../infrastructure/db/receipt.mongoose.model';
 
 const mapReceiptItem = (item: IReceiptItemDocument): ReceiptItem => ({
+  id: String(item._id),
   name: item.name,
   normalizedName: item.normalizedName,
   quantity: item.quantity,
