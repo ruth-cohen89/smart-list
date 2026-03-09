@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { AppError } from '../errors/app-error';
 import { catchAsync } from '../middlewares/catch-async';
 import type { ReceiptService } from '../services/receipt.service';

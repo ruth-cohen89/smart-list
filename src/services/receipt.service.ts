@@ -1,7 +1,7 @@
 import { normalizeName } from '../utils/normalize';
 import type { OcrProvider } from '../types/ocr-provider';
 import type { ReceiptRepository } from '../repositories/receipt.repository';
-import type { ReceiptItem, ReceiptItemInput } from '../models/receipt.model';
+import type { Receipt, ReceiptItem, ReceiptItemInput } from '../models/receipt.model';
 import { AppError } from '../errors/app-error';
 
 /**
@@ -132,11 +132,6 @@ function hasStopword(line: string): boolean {
   return _normalizedStopwords.some((w) => norm.includes(w));
 }
 
-const TOTALS_SECTION_RE = /(סה"כ|סה״כ|סהכ|סהייכ|סהיכ|לתשלום|לתשלם|subtotal|total\b|עודף|change\b)/i;
-
-function isTotalsSection(line: string): boolean {
-  return TOTALS_SECTION_RE.test(line) || TOTALS_SECTION_RE.test(normalizeForStopword(line));
-}
 
 const META_HE_RE =
   /(קבלה|מספר|קופה|עובד|סניף|תאריך|שעה|טלפון|מע"מ|מעמ|בעמ|סה"כ|סה״כ|סהכ|סהייכ|סהיכ|לתשלום|לתשלם|אשראי|מזומן|עודף|כרטיס|חשבון|פריט|כמות)/;
@@ -186,15 +181,6 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-function extractDiscountAmount(line: string): number | null {
-  const leading = line.match(/^₪?\s*-\s*(\d+[.,]\d{1,2})\s*$/);
-  if (leading) return -parseFloat(leading[1].replace(',', '.'));
-
-  const trailing = line.match(/(\d+[.,]\d{2})\s*-\s*$/);
-  if (trailing) return -parseFloat(trailing[1].replace(',', '.'));
-
-  return null;
-}
 
 type MulResult =
   | { kind: 'weight'; unitPrice: number; weightKg: number; finalPrice: number }
@@ -237,7 +223,6 @@ function extractStandaloneQty(segment: string[]): number | undefined {
   return undefined;
 }
 
-const ITEM_START_RE = /^\s*\d+\s+[a-zA-Z\u05D0-\u05EA]/;
 const SPACE_DECIMAL_RE = /(-?\d{1,3})\s(\d{2})(?!\d)/;
 
 function parseSpaceDecimal(m: RegExpMatchArray): number {
@@ -546,7 +531,7 @@ function findPrimaryStartIndex(lines: string[]): number {
 }
 
 function pushUniqueNameOnlyItem(
-  items: ReceiptItem[],
+  items: ReceiptItemInput[],
   seen: Set<string>,
   rawName: string,
   quantity?: number,
@@ -602,8 +587,8 @@ function findBestDigitalCandidateNearBarcode(
   return weighted ?? (bestLine ? cleanName(bestLine) : undefined);
 }
 
-function extractLooseDigitalNames(lines: string[], seenNormalized: Set<string>): ReceiptItem[] {
-  const items: ReceiptItem[] = [];
+function extractLooseDigitalNames(lines: string[], seenNormalized: Set<string>): ReceiptItemInput[] {
+  const items: ReceiptItemInput[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
@@ -640,11 +625,11 @@ function extractLooseDigitalNames(lines: string[], seenNormalized: Set<string>):
  * - barcode neighborhood scoring (before + after barcode)
  * - extra loose scan for weighted produce / non-barcode item lines
  */
-function parseItemsDigital(rawText: string): ReceiptItem[] {
+function parseItemsDigital(rawText: string): ReceiptItemInput[] {
   const text = rawText.replace(/₪₪/g, '₪');
   const lines = text.split('\n').map(normalizeLine).filter(Boolean);
 
-  const items: ReceiptItem[] = [];
+  const items: ReceiptItemInput[] = [];
   const seenKeys = new Set<string>();
   const seenNormalized = new Set<string>();
 
@@ -807,10 +792,10 @@ function parseItemsDigital(rawText: string): ReceiptItem[] {
  * - avoids collecting store header lines as products
  * - supports weighted prefix lines like "0.96 אבוקדו"
  */
-function parseItemsPrimary(rawText: string): ReceiptItem[] {
+function parseItemsPrimary(rawText: string): ReceiptItemInput[] {
   const lines = rawText.split('\n').map(normalizeLine).filter(Boolean);
 
-  const items: ReceiptItem[] = [];
+  const items: ReceiptItemInput[] = [];
   const seen = new Set<string>();
 
   const startIndex = findPrimaryStartIndex(lines);
@@ -894,7 +879,7 @@ function parseItemsPrimary(rawText: string): ReceiptItem[] {
   return items;
 }
 
-function parseItemsFallback(rawText: string): ReceiptItem[] {
+function parseItemsFallback(rawText: string): ReceiptItemInput[] {
   const lines = rawText.split('\n').map(normalizeLine);
 
   const prices: number[] = [];
@@ -952,15 +937,15 @@ function parseItemsFallback(rawText: string): ReceiptItem[] {
       .map((name) => {
         const normalized = normalizeName(name);
         if (!normalized) return null;
-        return { name, normalizedName: normalized } satisfies ReceiptItem;
+        return { name, normalizedName: normalized } satisfies ReceiptItemInput;
       })
-      .filter((x): x is ReceiptItem => x !== null);
+      .filter((x): x is ReceiptItemInput => x !== null);
   }
 
   if (prices.length < 2 || names.length < 2) return [];
 
   const count = Math.min(prices.length, names.length);
-  const items: ReceiptItem[] = [];
+  const items: ReceiptItemInput[] = [];
   for (let i = 0; i < count; i++) {
     const name = names[i];
     const normalized = normalizeName(name);
@@ -970,7 +955,7 @@ function parseItemsFallback(rawText: string): ReceiptItem[] {
   return items;
 }
 
-export function parseItems(rawText: string): ReceiptItem[] {
+export function parseItems(rawText: string): ReceiptItemInput[] {
   const kind = detectReceiptKind(rawText);
   const hasLeadingShekels = /^₪{1,2}\d/m.test(rawText);
 
@@ -1067,7 +1052,7 @@ export function detectReceiptKind(rawText: string): 'DIGITAL' | 'PHOTO' | 'HYBRI
   return 'HYBRID';
 }
 
-export function postProcessItems(items: ReceiptItem[], rawText: string): ReceiptItem[] {
+export function postProcessItems(items: ReceiptItemInput[], rawText: string): ReceiptItemInput[] {
   const kind = detectReceiptKind(rawText);
 
   let result = items
@@ -1091,7 +1076,7 @@ export function postProcessItems(items: ReceiptItem[], rawText: string): Receipt
   });
 
   if (kind === 'DIGITAL') {
-    const merged: ReceiptItem[] = [];
+    const merged: ReceiptItemInput[] = [];
     for (let i = 0; i < result.length; i++) {
       if (normalizeForPost(result[i].name) === 'לקג' && i + 1 < result.length) {
         const next = result[i + 1];
@@ -1202,9 +1187,7 @@ export class ReceiptService {
     console.debug('[ReceiptService] rawText (first 500 chars):', rawText.slice(0, 500));
     console.debug('[ReceiptService] price extraction enabled:', ENABLE_PRICE_EXTRACTION);
 
-    const parsedItems: ReceiptItemInput[] = postProcessItems(parseItems(rawText), rawText).map(
-      ({ id, ...item }) => item,
-    );
+    const parsedItems: ReceiptItemInput[] = postProcessItems(parseItems(rawText), rawText);
 
     const receipt = await this.receiptRepo.createReceipt({
       userId,

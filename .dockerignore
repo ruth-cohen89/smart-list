@@ -1,0 +1,36 @@
+# ── Dependencies & build output ───────────────────────────────────────────────
+# Rebuilt inside the container — never copy from host.
+node_modules/
+dist/
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Environment files ─────────────────────────────────────────────────────────
+# Never bake secrets into an image. Inject at runtime via -e or --env-file.
+.env
+.env.*
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+
+# ── TypeScript build artefacts ────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ── Lint / format caches & config ─────────────────────────────────────────────
+.eslintcache
+.prettiercache
+.eslintrc*
+.prettierrc*
+prettier.config.*
+eslint.config.*
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Docs (not needed inside the image) ────────────────────────────────────────
+README.md
+CLAUDE.md
