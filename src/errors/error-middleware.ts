@@ -31,7 +31,9 @@ export const globalErrorHandler = (
   else if (error.code === 11000) {
     error = handleDuplicateFieldsMongo(error);
   } else if (error.name === 'ValidationError') {
-    error = handleValidationErrorMongo(error as unknown as { errors: Record<string, { message: string }> });
+    error = handleValidationErrorMongo(
+      error as unknown as { errors: Record<string, { message: string }> },
+    );
   }
 
   if (error.isOperational) {
