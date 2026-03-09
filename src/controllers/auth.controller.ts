@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
 import { catchAsync } from '../middlewares/catch-async';
 import { AppError } from '../errors/app-error';
@@ -27,7 +27,7 @@ export class AuthController {
     res.status(201).json(result);
   });
 
-  login = catchAsync(async (req: Request, res: Response, _next: NextFunction) => {
+  login = catchAsync(async (req: Request, res: Response) => {
     const result = await this.service.login(req.body);
     res.status(200).json(result);
   });

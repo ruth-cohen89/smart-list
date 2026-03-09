@@ -1,5 +1,7 @@
 import { Types } from 'mongoose';
-import ConsumptionProfileMongoose from '../infrastructure/db/consumption-profile.mongoose.model';
+import ConsumptionProfileMongoose, {
+  IBaselineItemDocument,
+} from '../infrastructure/db/consumption-profile.mongoose.model';
 import { mapConsumptionProfile } from '../mappers/consumption-profile.mapper';
 import { normalizeName } from '../utils/normalize';
 
@@ -52,7 +54,7 @@ export class ConsumptionProfileRepository {
       (await ConsumptionProfileMongoose.create({ userId: uid, baselineItems: [] }));
 
     // 2) Index existing baseline items by normalizedName
-    const byNorm = new Map<string, any>();
+    const byNorm = new Map<string, IBaselineItemDocument>();
     for (const it of doc.baselineItems ?? []) {
       if (!it.normalizedName) it.normalizedName = normalizeName(it.name);
       byNorm.set(it.normalizedName, it);

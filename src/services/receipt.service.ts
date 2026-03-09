@@ -70,7 +70,7 @@ const HAS_HEBREW_RE = /[\u05D0-\u05EA]/;
 
 // --- Noise pattern guards ---
 const STARS_RE = /\*{4}/;
-const DATE_RE = /\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/;
+const DATE_RE = /\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}/;
 const ZERO_PRICE_LINE_RE = /^0[.,]00\s*₪?/;
 const JUNK_CHARS_RE = /[()[\]:!@#$%^&]/;
 
@@ -132,7 +132,6 @@ function hasStopword(line: string): boolean {
   return _normalizedStopwords.some((w) => norm.includes(w));
 }
 
-
 const META_HE_RE =
   /(קבלה|מספר|קופה|עובד|סניף|תאריך|שעה|טלפון|מע"מ|מעמ|בעמ|סה"כ|סה״כ|סהכ|סהייכ|סהיכ|לתשלום|לתשלם|אשראי|מזומן|עודף|כרטיס|חשבון|פריט|כמות)/;
 const META_EN_RE =
@@ -180,7 +179,6 @@ function extractQuantity(line: string): number | undefined {
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
-
 
 type MulResult =
   | { kind: 'weight'; unitPrice: number; weightKg: number; finalPrice: number }
@@ -587,7 +585,10 @@ function findBestDigitalCandidateNearBarcode(
   return weighted ?? (bestLine ? cleanName(bestLine) : undefined);
 }
 
-function extractLooseDigitalNames(lines: string[], seenNormalized: Set<string>): ReceiptItemInput[] {
+function extractLooseDigitalNames(
+  lines: string[],
+  seenNormalized: Set<string>,
+): ReceiptItemInput[] {
   const items: ReceiptItemInput[] = [];
 
   for (let i = 0; i < lines.length; i++) {

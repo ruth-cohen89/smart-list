@@ -2,8 +2,21 @@ import { Request, Response, NextFunction } from 'express';
 import { handleDuplicateFieldsMongo, handleValidationErrorMongo } from './mongo-handlers';
 import { handleTokenExpired, handleInvalidToken } from './auth-handlers';
 
-export const globalErrorHandler = (err: any, _req: Request, res: Response, _next: NextFunction) => {
-  let error = err;
+interface HandledError {
+  name?: string;
+  code?: number;
+  statusCode?: number;
+  isOperational?: boolean;
+  message?: string;
+}
+
+export const globalErrorHandler = (
+  err: HandledError,
+  _req: Request,
+  res: Response,
+  _next: NextFunction,
+) => {
+  let error: HandledError = err;
 
   // JWT library errors
   if (error.name === 'TokenExpiredError') {
