@@ -1,25 +1,25 @@
 export interface BaselineItem {
-    id: string;
-    name: string;
-    normalizedName: string;
-    quantity?: number;
-    unit?: string;
+  id: string;
+  name: string;
+  normalizedName: string;
+  quantity?: number;
+  unit?: string;
 
-    intervalDays: number;
+  intervalDays: number;
 
-    // for MVP
-    lastPurchasedAt?: Date;
-    usageScore: number;
-    lastSuggestedAt?: Date;
+  // for MVP
+  lastPurchasedAt?: Date;
+  usageScore: number;
+  lastSuggestedAt?: Date;
 
-    createdAt: Date;
-    updatedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface ConsumptionProfile {
-    id: string;
-    userId: string;
-    baselineItems: BaselineItem[];
-    createdAt: Date;
-    updatedAt: Date;
+  id: string;
+  userId: string;
+  baselineItems: BaselineItem[];
+  createdAt: Date;
+  updatedAt: Date;
 }

@@ -1,96 +1,69 @@
+// shopping-lists.routes.ts
 import { Router } from 'express';
 import { ShoppingListController } from '../controllers/shopping-list.controller';
 import { ShoppingListService } from '../services/shopping-list.service';
+import { ConsumptionProfileService } from '../services/consumption-profile.service';
 import { authenticate } from '../middlewares/authenticate';
 import { validateObjectId } from '../middlewares/validate-object-id';
 import { validateBody } from '../middlewares/validate-body';
 
 import {
-    createShoppingListSchema,
-    updateShoppingListSchema,
-    createItemSchema,
-    updateItemSchema,
+  updateShoppingListSchema,
+  createItemSchema,
+  updateItemSchema,
 } from '../validations/shopping-list';
 
 const service = new ShoppingListService();
-const controller = new ShoppingListController(service);
+const consumptionProfileService = new ConsumptionProfileService();
+const controller = new ShoppingListController(service, consumptionProfileService);
 
 const router = Router();
 
-// Lists
+// Active list
+router.get('/active', authenticate, controller.getActiveList);
+
+router.patch(
+  '/active',
+  authenticate,
+  validateBody(updateShoppingListSchema),
+  controller.updateActiveList,
+);
+
+// Items (in active list)
 router.post(
-    '/from-baseline',
-    authenticate,
-    controller.createFromBaseline
-);
-
-router.post(
-    '/',
-    authenticate,
-    validateBody(createShoppingListSchema),
-    controller.createList
-);
-
-router.get(
-    '/',
-    authenticate,
-    controller.getMyLists
-);
-
-router.get(
-    '/:listId',
-    authenticate,
-    validateObjectId('listId'),
-    controller.getList
+  '/active/items',
+  authenticate,
+  validateBody(createItemSchema),
+  controller.addItemToActiveList,
 );
 
 router.patch(
-    '/:listId',
-    authenticate,
-    validateObjectId('listId'),
-    validateBody(updateShoppingListSchema),
-    controller.updateList
+  '/active/items/:itemId',
+  authenticate,
+  validateObjectId('itemId'),
+  validateBody(updateItemSchema),
+  controller.updateItemInActiveList,
 );
 
 router.delete(
-    '/:listId',
-    authenticate,
-    validateObjectId('listId'),
-    controller.deleteList
-);
-
-// Items
-router.post(
-    '/:listId/items',
-    authenticate,
-    validateObjectId('listId'),
-    validateBody(createItemSchema),
-    controller.addItem
-);
-
-router.patch(
-    '/:listId/items/:itemId',
-    authenticate,
-    validateObjectId('listId'),
-    validateObjectId('itemId'),
-    validateBody(updateItemSchema),
-    controller.updateItem
-);
-
-router.delete(
-    '/:listId/items/:itemId',
-    authenticate,
-    validateObjectId('listId'),
-    validateObjectId('itemId'),
-    controller.deleteItem
+  '/active/items/:itemId',
+  authenticate,
+  validateObjectId('itemId'),
+  controller.deleteItemFromActiveList,
 );
 
 router.post(
-    '/:listId/items/:itemId/toggle',
-    authenticate,
-    validateObjectId('listId'),
-    validateObjectId('itemId'),
-    controller.toggleItemPurchased
+  '/active/items/:itemId/purchase',
+  authenticate,
+  validateObjectId('itemId'),
+  controller.purchaseItemInActiveList,
 );
+
+// router.post(
+//   '/active/items/:itemId/toggle',
+//   authenticate,
+//   validateObjectId('itemId'),
+//   controller.toggleItemPurchasedInActiveList,
+// );
 
 export default router;

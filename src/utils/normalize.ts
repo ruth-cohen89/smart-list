@@ -1,5 +1,11 @@
-export const normalizeName = (value: string) =>
-    value
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, ' ');
+export const normalizeName = (name: string): string => {
+  if (!name) return '';
+
+  return name
+    .normalize('NFKC')
+    .replace(/["'`׳״]/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+};
