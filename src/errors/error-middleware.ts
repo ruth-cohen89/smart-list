@@ -8,6 +8,8 @@ interface HandledError {
   statusCode?: number;
   isOperational?: boolean;
   message?: string;
+  keyValue?: Record<string, unknown>;
+  errors?: Record<string, { message: string }>;
 }
 
 export const globalErrorHandler = (
@@ -29,11 +31,11 @@ export const globalErrorHandler = (
   else if (error.code === 11000) {
     error = handleDuplicateFieldsMongo(error);
   } else if (error.name === 'ValidationError') {
-    error = handleValidationErrorMongo(error);
+    error = handleValidationErrorMongo(error as unknown as { errors: Record<string, { message: string }> });
   }
 
   if (error.isOperational) {
-    return res.status(error.statusCode).json({ message: error.message });
+    return res.status(error.statusCode ?? 500).json({ message: error.message });
   }
 
   console.error('UNEXPECTED ERROR 💥', err);
