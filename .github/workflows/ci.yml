@@ -1,9 +1,5 @@
 name: CI
 
-# ─── Triggers ─────────────────────────────────────────────────────────────────
-# Run on every push to every branch, and on every pull request.
-# Concurrency: if a new run starts for the same ref, cancel the previous one
-# so we never waste CI minutes on superseded commits.
 on:
   push:
     branches: ['**']
@@ -13,10 +9,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# ─── Jobs ─────────────────────────────────────────────────────────────────────
 jobs:
-  # ── 1. Lint · Test · Build ──────────────────────────────────────────────────
-  # Runs on every branch push and every pull request.
   validate:
     name: Lint · Test · Build
     runs-on: ubuntu-latest
@@ -29,7 +22,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm' # caches ~/.npm between runs for the same lockfile
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -41,29 +34,49 @@ jobs:
         run: npm test
         env:
           NODE_ENV: test
-          # A dummy secret is enough — auth middleware is mocked in API tests
-          # and unit tests never reach the JWT layer.
           JWT_SECRET: ci-test-secret-not-used-in-production
 
       - name: Build TypeScript
         run: npm run build
 
-  # ── 2. Docker Build ─────────────────────────────────────────────────────────
-  # Runs only when a commit lands on main (not on PRs targeting main).
-  # Depends on `validate` so Docker is never built from a broken state.
   docker:
-    name: Docker Build
+    name: Docker Build & Push
     runs-on: ubuntu-latest
     needs: validate
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      contents: read
+
+    env:
+      GCP_REGION: me-west1
+      GCP_PROJECT_ID: smartlist-ocr
+      ARTIFACT_REPOSITORY: smartlist-api
+      IMAGE_NAME: smartlist-api
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
       - name: Build Docker image
         run: |
           docker build \
-            --tag smartlist-api:${{ github.sha }} \
-            --tag smartlist-api:latest \
+            --tag ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --tag ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPOSITORY }}/${{ env.IMAGE_NAME }}:latest \
             .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPOSITORY }}/${{ env.IMAGE_NAME }}:latest
