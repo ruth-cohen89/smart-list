@@ -1,0 +1,71 @@
+name: CD
+
+# Trigger: runs only after the CI workflow completes on the main branch.
+# Using workflow_run (instead of push) guarantees the Docker image was already
+# built and pushed by CI before this deployment job starts.
+on:
+  workflow_run:
+    workflows: ['CI']
+    branches: [main]
+    types: [completed]
+
+jobs:
+  deploy:
+    name: Deploy to GKE
+    runs-on: ubuntu-latest
+
+    # Only deploy when CI actually succeeded — skip if CI was cancelled or failed.
+    if: github.event.workflow_run.conclusion == 'success'
+
+    env:
+      GCP_PROJECT_ID: smartlist-ocr
+      GCP_REGION: me-west1
+      GKE_CLUSTER: smartlist-cluster
+      ARTIFACT_REPOSITORY: smartlist-api
+      IMAGE_NAME: smartlist-api
+      K8S_NAMESPACE: smartlist
+      K8S_DEPLOYMENT: smartlist-api
+      K8S_CONTAINER: smartlist-api
+
+    steps:
+      # ── 1. Authenticate to GCP ──────────────────────────────────────────────
+      # Uses the service account JSON stored in the GCP_SA_KEY GitHub secret.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # ── 2. Set up gcloud CLI ────────────────────────────────────────────────
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # ── 3. Fetch GKE credentials ────────────────────────────────────────────
+      # Writes a kubeconfig entry so subsequent kubectl commands target the
+      # correct cluster without extra flags.
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      # ── 4. Update the container image ───────────────────────────────────────
+      # Uses the immutable commit SHA from the triggering CI run — never :latest.
+      # `kubectl set image` patches only the image field; the rest of the
+      # Deployment spec (probes, resources, volumes, etc.) stays untouched.
+      - name: Update deployment image
+        run: |
+          kubectl set image deployment/${{ env.K8S_DEPLOYMENT }} \
+            ${{ env.K8S_CONTAINER }}=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.event.workflow_run.head_sha }} \
+            --namespace ${{ env.K8S_NAMESPACE }}
+
+      # ── 5. Wait for the rollout to finish ───────────────────────────────────
+      # Blocks until all pods are healthy or the 5-minute timeout expires.
+      # A failed rollout (crash loop, failed readiness probe, etc.) causes this
+      # step — and therefore the whole job — to exit with a non-zero code,
+      # marking the workflow run as failed so you get an immediate alert.
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/${{ env.K8S_DEPLOYMENT }} \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            --timeout=300s

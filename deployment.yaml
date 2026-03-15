@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smartlist-api
+  namespace: smartlist
+  labels:
+    app: smartlist-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smartlist-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: smartlist-api
+    spec:
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: google-vision-key
+          secret:
+            secretName: google-vision-key
+      containers:
+        - name: smartlist-api
+          image: me-west1-docker.pkg.dev/smartlist-ocr/smartlist-api/smartlist-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          volumeMounts:
+            - name: google-vision-key
+              mountPath: /secrets
+              readOnly: true
+          env:
+            - name: NODE_ENV
+              value: 'production'
+            - name: PORT
+              value: '3000'
+            - name: RECEIPT_EXTRACT_PRICES
+              value: 'false'
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: '/secrets/key.json'
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: smartlist-secrets
+                  key: MONGO_URI
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: smartlist-secrets
+                  key: JWT_SECRET
+            - name: GOOGLE_VISION_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: smartlist-secrets
+                  key: GOOGLE_VISION_API_KEY
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: '500m'
+              memory: '512Mi'
+            limits:
+              cpu: '1'
+              memory: '1Gi'
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
