@@ -14,8 +14,8 @@ router.get('/', (_req, res) => {
   }
 
   res.json({
-    status: 'working sooo good',
-    db: 'connected',
+    status: 'ok',
+    db: 'working sooo good',
   });
 });
 
