@@ -16,7 +16,7 @@ const startServer = async () => {
     const app = createApp();
 
     const server = app.listen(PORT, HOST, () => {
-      console.log(`Server running on http://${HOST}:${PORT}`);
+      console.log(`HI Server running on http://${HOST}:${PORT}`);
     });
 
     // graceful shutdown
