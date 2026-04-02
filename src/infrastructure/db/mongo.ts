@@ -1,4 +1,3 @@
-// src/infrastructure/db/mongo.ts
 import mongoose from 'mongoose';
 
 export const connectMongo = async () => {
@@ -9,8 +8,16 @@ export const connectMongo = async () => {
 
     await mongoose.connect(process.env.MONGO_URI as string);
     console.log('✅ MongoDB connected');
+
+    mongoose.connection.on('error', (err) => {
+      console.error('❌ Mongo error:', err);
+    });
+
+    mongoose.connection.on('disconnected', () => {
+      console.error('⚠️ Mongo disconnected');
+    });
   } catch (error) {
-    console.error('Mongo connection failed');
+    console.error('Mongo connection failed', error);
     throw error;
   }
 };
