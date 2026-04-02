@@ -46,18 +46,19 @@ export class AuthService {
 
     const user = await this.repo.findByEmail(email);
 
-    // Don't expose if user with that email exists
-    if (!user) {
-      return { resetToken: 'dummy' };
+    if (user) {
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MIN * 60 * 1000);
+
+      await this.repo.setPasswordResetToken(user.id, tokenHash, expiresAt);
+
+      // send email with rawToken in production, but for now (development) we just send it directly
+      return { resetToken: rawToken };
+    } else {
+      // Don't expose if user with that email exists
+      return { resetToken: 'null' };
     }
-
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MIN * 60 * 1000);
-
-    await this.repo.setPasswordResetToken(user.id, tokenHash, expiresAt);
-
-    return { resetToken: rawToken };
   }
 
   async resetPassword(input: ResetPasswordInput): Promise<{ token: string }> {

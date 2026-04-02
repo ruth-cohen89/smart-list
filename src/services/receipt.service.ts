@@ -1196,9 +1196,6 @@ export class ReceiptService {
       items: parsedItems,
     });
 
-    return {
-      receiptId: receipt.id,
-      items: receipt.items,
-    };
+    return { receiptId: receipt.id, items: receipt.items };
   }
 }
