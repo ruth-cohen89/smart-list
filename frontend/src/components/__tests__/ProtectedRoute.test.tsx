@@ -20,7 +20,7 @@ describe('ProtectedRoute', () => {
             <Route path="/login" element={<div>Login Page</div>} />
           </Routes>
         </MemoryRouter>
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     expect(screen.getByText('Login Page')).toBeInTheDocument();
@@ -40,7 +40,7 @@ describe('ProtectedRoute', () => {
             <Route path="/login" element={<div>Login Page</div>} />
           </Routes>
         </MemoryRouter>
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     expect(screen.getByText('Dashboard')).toBeInTheDocument();

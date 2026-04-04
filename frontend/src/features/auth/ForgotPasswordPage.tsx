@@ -41,9 +41,7 @@ export default function ForgotPasswordPage() {
             className="w-16 h-16 object-contain mx-auto mb-3 drop-shadow-sm"
           />
           <h1 className="text-2xl font-bold text-gray-900">Reset password</h1>
-          <p className="text-gray-500 mt-1 text-sm">
-            Enter your email to receive a reset token
-          </p>
+          <p className="text-gray-500 mt-1 text-sm">Enter your email to receive a reset token</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
@@ -74,9 +72,7 @@ export default function ForgotPasswordPage() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Email
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
                 <input
                   type="email"
                   value={email}

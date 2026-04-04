@@ -29,7 +29,7 @@ describe('LoginPage', () => {
         <AuthProvider>
           <LoginPage />
         </AuthProvider>
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     await userEvent.type(screen.getByPlaceholderText('you@example.com'), 'test@example.com');
@@ -59,7 +59,7 @@ describe('LoginPage', () => {
         <AuthProvider>
           <LoginPage />
         </AuthProvider>
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     await userEvent.type(screen.getByPlaceholderText('you@example.com'), 'test@example.com');

@@ -53,9 +53,7 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Email
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
               <input
                 type="email"
                 value={email}
@@ -68,9 +66,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Password
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
               <input
                 type="password"
                 value={password}
@@ -83,10 +79,7 @@ export default function LoginPage() {
             </div>
 
             <div className="flex justify-end">
-              <Link
-                to="/forgot-password"
-                className="text-sm text-brand-600 hover:text-brand-700"
-              >
+              <Link to="/forgot-password" className="text-sm text-brand-600 hover:text-brand-700">
                 Forgot password?
               </Link>
             </div>

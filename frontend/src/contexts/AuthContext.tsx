@@ -1,10 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import type { User, LoginPayload, SignupPayload, AuthResponse } from '../types';
 import { authService } from '../services/authService';
 
@@ -54,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
     },
-    [setAuthData]
+    [setAuthData],
   );
 
   const signup = useCallback(
@@ -67,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
     },
-    [setAuthData]
+    [setAuthData],
   );
 
   const logout = useCallback(() => {
@@ -78,9 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider
-      value={{ user, token, isLoading, login, signup, logout, setAuthData }}
-    >
+    <AuthContext.Provider value={{ user, token, isLoading, login, signup, logout, setAuthData }}>
       {children}
     </AuthContext.Provider>
   );

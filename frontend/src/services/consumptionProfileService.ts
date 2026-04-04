@@ -6,13 +6,10 @@ import type {
 } from '../types';
 
 export const consumptionProfileService = {
-  getProfile: () =>
-    api.get<ConsumptionProfile>('/consumption-profile').then((r) => r.data),
+  getProfile: () => api.get<ConsumptionProfile>('/consumption-profile').then((r) => r.data),
 
   upsertFromQuestionnaire: (payload: UpsertConsumptionProfilePayload) =>
-    api
-      .put<ConsumptionProfile>('/consumption-profile', payload)
-      .then((r) => r.data),
+    api.put<ConsumptionProfile>('/consumption-profile', payload).then((r) => r.data),
 
   addBaselineItem: (payload: CreateBaselineItemPayload) =>
     api

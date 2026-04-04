@@ -112,9 +112,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Unit
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit</label>
             <input
               type="text"
               value={unit}
@@ -127,9 +125,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Category
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Category</label>
           <input
             type="text"
             value={category}
@@ -141,9 +137,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Priority
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>
           <div className="flex gap-2">
             {PRIORITIES.map((p) => (
               <button
@@ -155,8 +149,8 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
                     ? p.value === 'high'
                       ? 'bg-red-500 border-red-500 text-white'
                       : p.value === 'medium'
-                      ? 'bg-amber-500 border-amber-500 text-white'
-                      : 'bg-gray-400 border-gray-400 text-white'
+                        ? 'bg-amber-500 border-amber-500 text-white'
+                        : 'bg-gray-400 border-gray-400 text-white'
                     : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
                 }`}
               >
@@ -167,9 +161,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Notes
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
