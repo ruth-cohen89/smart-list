@@ -45,11 +45,9 @@ interface RawItem {
 }
 
 interface ParsedXml {
-  Root?: {
-    Items?: {
-      Item?: RawItem | RawItem[];
-    };
-  };
+  Root?: { Items?: { Item?: RawItem | RawItem[] } };
+  // Shufersal (and some other chains) use lowercase <root>
+  root?: { Items?: { Item?: RawItem | RawItem[] } };
 }
 
 // ─── Parser singleton (re-used across calls) ─────────────────────────────────
@@ -73,7 +71,8 @@ export function parsePriceXml(xmlData: Buffer | string): ParsedProduct[] {
 
   const parsed = xmlParser.parse(xmlString) as ParsedXml;
 
-  const rawItems = parsed.Root?.Items?.Item;
+  const rootNode = parsed.Root ?? parsed.root;
+  const rawItems = rootNode?.Items?.Item;
   // fast-xml-parser with isArray ensures this is always an array
   const items: RawItem[] = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
 

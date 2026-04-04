@@ -60,8 +60,27 @@ export class CatalogImportService {
       };
     }
 
+    console.log(`[IMPORT] downloaded file: ${file.filename}`);
+    console.log(`[IMPORT] compressed size: ${file.rawData.length} bytes`);
+
     const xmlData = await decompressIfNeeded(file.rawData);
+    console.log(`[IMPORT] decompressed size: ${xmlData.length} bytes`);
+    console.log(`[IMPORT] content preview: ${xmlData.subarray(0, 300).toString('utf-8')}`);
+
     const products = parsePriceXml(xmlData);
+    console.log(`[IMPORT] parsed products: ${products.length}`);
+    if (products.length > 0) console.log(`[IMPORT] first product: ${JSON.stringify(products[0])}`);
+
+    if (products.length === 0) {
+      return {
+        chainId,
+        success: false,
+        upsertedCount: 0,
+        sourceFile: file.filename,
+        error: 'Parser returned 0 products',
+      };
+    }
+
     const now = new Date();
     let upsertedCount = 0;
 
