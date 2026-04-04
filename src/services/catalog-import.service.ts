@@ -13,7 +13,7 @@ import {
 import { parsePriceXml } from '../infrastructure/catalog-import/price-file.parser';
 import { normalizeName } from '../utils/normalize';
 
-// ─── Result types ─────────────────────────────────────────────────────────────
+// Result types
 
 export interface ChainImportResult {
   chainId: ChainId;
