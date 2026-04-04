@@ -14,6 +14,7 @@ const quantitySchema = z.coerce.number().int().min(1);
 
 const unitSchema = z.string().trim().max(20);
 const notesSchema = z.string().trim().max(200);
+const barcodeSchema = z.string().trim().max(50);
 
 // -------------------- Lists --------------------
 
@@ -53,6 +54,7 @@ export const createItemSchema = z
     unit: unitSchema.optional(),
     notes: notesSchema.optional(),
     priority: prioritySchema.optional(),
+    barcode: barcodeSchema.optional(),
     // purchased intentionally omitted (use toggle endpoint instead)
   })
   .strict();
@@ -65,6 +67,7 @@ export const updateItemSchema = z
     unit: unitSchema.optional(),
     notes: notesSchema.optional(),
     priority: prioritySchema.optional(),
+    barcode: barcodeSchema.optional(),
     // purchased intentionally omitted (use toggle endpoint instead)
   })
   .strict()

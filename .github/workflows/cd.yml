@@ -29,11 +29,11 @@ jobs:
 
     steps:
       # ── 1. Authenticate to GCP ──────────────────────────────────────────────
-      # Uses the service account JSON stored in the GCP_SA_KEY GitHub secret.
+      # Uses the service account JSON stored in the GCP_CD_SA_KEY GitHub secret.
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          credentials_json: ${{ secrets.GCP_CD_SA_KEY }}
 
       # ── 2. Set up gcloud CLI ────────────────────────────────────────────────
       - name: Set up Google Cloud SDK

@@ -1,5 +1,26 @@
 export type ListStatus = 'active' | 'completed' | 'archived';
 export type ItemPriority = 'low' | 'medium' | 'high';
+export type MatchStatus = 'pending' | 'matched' | 'ambiguous' | 'unmatched';
+export type SelectionSource = 'free_text' | 'auto_match' | 'user_selected' | 'barcode';
+
+export interface MatchedProduct {
+  productId?: string;
+  externalProductCode?: string;
+  name: string;
+  brand?: string;
+  category?: string;
+  quantity?: number;
+  unit?: string;
+  confidence?: number;
+}
+
+export interface ItemMatchUpdate {
+  itemId: string;
+  normalizedName: string;
+  matchStatus: MatchStatus;
+  matchedProduct: MatchedProduct | null;
+  selectionSource: SelectionSource;
+}
 
 export interface ShoppingItem {
   id: string;
@@ -9,8 +30,15 @@ export interface ShoppingItem {
   unit?: string;
   notes?: string;
   priority?: ItemPriority;
+  barcode?: string;
   createdAt: Date;
   updatedAt: Date;
+  // Matching fields (populated when match-items is triggered)
+  rawName?: string;
+  normalizedName?: string;
+  matchStatus?: MatchStatus;
+  selectionSource?: SelectionSource;
+  matchedProduct?: MatchedProduct | null;
 }
 
 export interface ShoppingList {

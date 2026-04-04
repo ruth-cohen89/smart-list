@@ -12,9 +12,14 @@ const mapItem = (item: IShoppingItemDocument): ShoppingItem => ({
   unit: item.unit,
   notes: item.notes,
   priority: item.priority,
-
+  barcode: item.barcode,
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
+  rawName: item.rawName,
+  normalizedName: item.normalizedName,
+  matchStatus: item.matchStatus,
+  selectionSource: item.selectionSource,
+  matchedProduct: (item.matchedProduct as ShoppingItem['matchedProduct']) ?? null,
 });
 
 export const mapShoppingList = (doc: IShoppingListDocument): ShoppingList => ({

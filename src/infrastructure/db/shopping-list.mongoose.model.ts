@@ -10,8 +10,15 @@ export interface IShoppingItemDocument extends Document {
   unit?: string;
   notes?: string;
   priority?: ItemPriority;
+  barcode?: string;
   createdAt: Date;
   updatedAt: Date;
+  // Matching fields
+  rawName?: string;
+  normalizedName?: string;
+  matchStatus?: 'pending' | 'matched' | 'ambiguous' | 'unmatched';
+  selectionSource?: 'free_text' | 'auto_match' | 'user_selected' | 'barcode';
+  matchedProduct?: Record<string, unknown> | null;
 }
 
 export interface IShoppingListDocument extends Document {
@@ -37,6 +44,16 @@ const ShoppingItemSchema = new Schema<IShoppingItemDocument>(
     unit: { type: String, trim: true, maxlength: 20 },
     notes: { type: String, trim: true, maxlength: 200 },
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+    barcode: { type: String, trim: true, maxlength: 50 },
+    // Matching fields
+    rawName: { type: String, trim: true },
+    normalizedName: { type: String, trim: true },
+    matchStatus: { type: String, enum: ['pending', 'matched', 'ambiguous', 'unmatched'] },
+    selectionSource: {
+      type: String,
+      enum: ['free_text', 'auto_match', 'user_selected', 'barcode'],
+    },
+    matchedProduct: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true },
 );

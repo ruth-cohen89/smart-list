@@ -58,9 +58,7 @@ export default function RegisterPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Full name
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Full name</label>
               <input
                 type="text"
                 value={fullName}
@@ -73,9 +71,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Email
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
               <input
                 type="email"
                 value={email}

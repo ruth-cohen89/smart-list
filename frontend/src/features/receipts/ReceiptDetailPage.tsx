@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { receiptService } from '../../services/receiptService';
-import type {
-  Receipt,
-  MatchItemsResponse,
-  MatchedReceiptItem,
-  ConfirmMatch,
-} from '../../types';
+import type { Receipt, MatchItemsResponse, MatchedReceiptItem, ConfirmMatch } from '../../types';
 import Layout from '../../components/Layout';
 import Spinner from '../../components/Spinner';
 
@@ -24,7 +19,9 @@ export default function ReceiptDetailPage() {
   const [error, setError] = useState('');
 
   // For confirm step: which pending matches to include
-  const [selectedMatches, setSelectedMatches] = useState<Record<string, { sl?: string; bl?: string }>>({});
+  const [selectedMatches, setSelectedMatches] = useState<
+    Record<string, { sl?: string; bl?: string }>
+  >({});
 
   useEffect(() => {
     if (!receiptId) return;
@@ -55,9 +52,7 @@ export default function ReceiptDetailPage() {
             ? m.shoppingListMatch.itemId
             : undefined;
         const bl =
-          m.baselineMatch?.status === 'pendingConfirmation'
-            ? m.baselineMatch.itemId
-            : undefined;
+          m.baselineMatch?.status === 'pendingConfirmation' ? m.baselineMatch.itemId : undefined;
         if (sl || bl) {
           initial[m.receiptItemId] = { sl, bl };
         }
@@ -163,7 +158,12 @@ export default function ReceiptDetailPage() {
             className="p-2 hover:bg-gray-100 rounded-xl text-gray-500 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
           </button>
           <div>
@@ -195,8 +195,18 @@ export default function ReceiptDetailPage() {
         {step === 'done' && (
           <div className="bg-green-50 border border-green-200 rounded-2xl p-8 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <svg
+                className="w-8 h-8 text-green-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
               </svg>
             </div>
             <h2 className="text-lg font-bold text-green-900 mb-2">Receipt applied!</h2>
@@ -284,17 +294,13 @@ function ScannedItemsCard({ items }: { items: Receipt['items'] }) {
             <div key={item.id} className="px-5 py-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
-                {item.category && (
-                  <p className="text-xs text-gray-400">{item.category}</p>
-                )}
+                {item.category && <p className="text-xs text-gray-400">{item.category}</p>}
               </div>
               <div className="flex-shrink-0 text-right">
                 {item.price != null && (
                   <p className="text-sm font-semibold text-gray-700">₪{item.price.toFixed(2)}</p>
                 )}
-                {item.quantity != null && (
-                  <p className="text-xs text-gray-400">×{item.quantity}</p>
-                )}
+                {item.quantity != null && <p className="text-xs text-gray-400">×{item.quantity}</p>}
               </div>
             </div>
           ))}
@@ -323,14 +329,13 @@ function ConfirmStep({
 
   const autoApproved = matchedReceiptItems.filter(
     (m) =>
-      m.shoppingListMatch?.status === 'autoApproved' ||
-      m.baselineMatch?.status === 'autoApproved'
+      m.shoppingListMatch?.status === 'autoApproved' || m.baselineMatch?.status === 'autoApproved',
   );
 
   const pending = matchedReceiptItems.filter(
     (m) =>
       m.shoppingListMatch?.status === 'pendingConfirmation' ||
-      m.baselineMatch?.status === 'pendingConfirmation'
+      m.baselineMatch?.status === 'pendingConfirmation',
   );
 
   const pendingCount = Object.values(selectedMatches).filter((v) => v.sl || v.bl).length;
@@ -452,7 +457,12 @@ function MatchRow({ item, readOnly }: { item: MatchedReceiptItem; readOnly?: boo
     <div className="px-4 py-3 flex items-start gap-3">
       {readOnly && (
         <div className="mt-0.5 w-5 h-5 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-          <svg className="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg
+            className="w-3 h-3 text-green-600"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
           </svg>
         </div>
@@ -491,7 +501,8 @@ function PendingMatchRow({
   onToggleSl: () => void;
   onToggleBl: () => void;
 }) {
-  const sl = item.shoppingListMatch?.status === 'pendingConfirmation' ? item.shoppingListMatch : null;
+  const sl =
+    item.shoppingListMatch?.status === 'pendingConfirmation' ? item.shoppingListMatch : null;
   const bl = item.baselineMatch?.status === 'pendingConfirmation' ? item.baselineMatch : null;
 
   return (
@@ -510,7 +521,9 @@ function PendingMatchRow({
               <span className="text-sm text-gray-700 group-hover:text-gray-900">
                 Shopping list: <span className="font-medium">{sl.itemName}</span>
               </span>
-              <span className="ml-2 text-xs text-gray-400">{Math.round(sl.score * 100)}% match</span>
+              <span className="ml-2 text-xs text-gray-400">
+                {Math.round(sl.score * 100)}% match
+              </span>
             </div>
           </label>
         )}
@@ -526,7 +539,9 @@ function PendingMatchRow({
               <span className="text-sm text-gray-700 group-hover:text-gray-900">
                 Baseline: <span className="font-medium">{bl.itemName}</span>
               </span>
-              <span className="ml-2 text-xs text-gray-400">{Math.round(bl.score * 100)}% match</span>
+              <span className="ml-2 text-xs text-gray-400">
+                {Math.round(bl.score * 100)}% match
+              </span>
             </div>
           </label>
         )}

@@ -4,6 +4,8 @@ import userRouter from './user.routes';
 import shoppingListRouter from './shopping-list.routes';
 import consumptionProfileRouter from './consumption-profile.routes';
 import receiptsRouter from './receipts.routes';
+import priceComparisonRouter from './price-comparison.routes';
+import catalogImportRouter from './catalog-import.routes';
 import healthRouter from './health.routes';
 
 const router = Router();
@@ -13,6 +15,8 @@ router.use('/users', userRouter);
 router.use('/shopping-lists', shoppingListRouter);
 router.use('/consumption-profile', consumptionProfileRouter);
 router.use('/receipts', receiptsRouter);
+router.use('/price-comparison', priceComparisonRouter);
+router.use('/catalog-import', catalogImportRouter);
 
 router.use('/health', healthRouter);
 

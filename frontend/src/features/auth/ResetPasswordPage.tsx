@@ -66,9 +66,7 @@ export default function ResetPasswordPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Reset token
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Reset token</label>
               <input
                 type="text"
                 value={token}
@@ -80,9 +78,7 @@ export default function ResetPasswordPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                New password
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">New password</label>
               <input
                 type="password"
                 value={newPassword}

@@ -5,7 +5,6 @@ import { ShoppingListService } from './shopping-list.service';
 import { generateToken } from '../utils/jwt';
 import { handleInvalidCredentials } from '../errors/auth-handlers';
 import { AppError } from '../errors/app-error';
-
 import {
   ChangePasswordInput,
   ForgotPasswordInput,
@@ -13,7 +12,6 @@ import {
   SignupInput,
   LoginInput,
 } from '../validations/auth.schemas';
-
 import { ForgotPasswordResponse } from '../types/auth'; // מה שנשאר שם
 
 const RESET_TOKEN_TTL_MIN = 15;

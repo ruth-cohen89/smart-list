@@ -2,7 +2,7 @@
 import { AppError } from '../errors/app-error';
 import { ShoppingListRepository } from '../repositories/shopping-list.repository';
 
-import type { ShoppingList } from '../models/shopping-list.model';
+import type { ShoppingList, ShoppingItem, ItemMatchUpdate } from '../models/shopping-list.model';
 import type { BaselineItem } from '../models/consumption-profile.model';
 import type {
   UpdateShoppingListInput,
@@ -12,6 +12,7 @@ import type {
 import { normalizeName } from '../utils/normalize';
 
 import { ConsumptionProfileRepository } from '../repositories/consumption-profile.repository';
+import { MatchingService } from './matching.service';
 
 export type SoonSuggestion = {
   name: string;
@@ -19,9 +20,19 @@ export type SoonSuggestion = {
   intervalDays: number;
 };
 
+export type MatchActiveListResult = {
+  updatedList: ShoppingList;
+  ambiguousItems: ShoppingItem[];
+};
+
 export class ShoppingListService {
   private readonly repo = new ShoppingListRepository();
   private readonly consumptionRepo = new ConsumptionProfileRepository();
+  private readonly matchingService: MatchingService;
+
+  constructor(matchingService?: MatchingService) {
+    this.matchingService = matchingService ?? new MatchingService();
+  }
 
   // ─── Active-list invariant ────────────────────────────────────────────────
 
@@ -95,6 +106,32 @@ export class ShoppingListService {
 
   //   return updated;
   // }
+
+  /**
+   * Run matching against every item in the active list and persist results.
+   * Called only when the user explicitly triggers "compare prices".
+   */
+  async matchActiveListItems(userId: string): Promise<MatchActiveListResult> {
+    const active = await this.repo.getOrCreateActiveList(userId);
+
+    const updates: ItemMatchUpdate[] = active.items.map((item) => {
+      const result = this.matchingService.matchShoppingItem(item);
+      return {
+        itemId: item.id,
+        normalizedName: normalizeName(item.rawName ?? item.name),
+        matchStatus: result.matchStatus,
+        matchedProduct: result.matchedProduct,
+        selectionSource: 'auto_match',
+      };
+    });
+
+    const updatedList = await this.repo.updateItemsMatchData(userId, active.id, updates);
+    if (!updatedList) throw new AppError('Shopping list not found', 404);
+
+    const ambiguousItems = updatedList.items.filter((i) => i.matchStatus === 'ambiguous');
+
+    return { updatedList, ambiguousItems };
+  }
 
   // shopping-list.service.ts
 
