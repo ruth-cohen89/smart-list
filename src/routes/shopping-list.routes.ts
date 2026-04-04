@@ -59,6 +59,9 @@ router.post(
   controller.purchaseItemInActiveList,
 );
 
+// Trigger matching for all items in the active list (e.g. "compare prices" flow)
+router.post('/active/match-items', authenticate, controller.matchActiveListItems);
+
 // router.post(
 //   '/active/items/:itemId/toggle',
 //   authenticate,

@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import ShoppingListMongoose from '../infrastructure/db/shopping-list.mongoose.model';
 import { mapShoppingList } from '../mappers/shopping-list.mapper';
 
-import type { ShoppingList } from '../models/shopping-list.model';
+import type { ShoppingList, ItemMatchUpdate } from '../models/shopping-list.model';
 import type {
   CreateShoppingListInput,
   UpdateShoppingListInput,
@@ -135,6 +135,7 @@ export class ShoppingListRepository {
             unit: input.unit,
             notes: input.notes,
             priority: input.priority ?? 'medium',
+            barcode: input.barcode,
           },
         },
       },
@@ -189,6 +190,43 @@ export class ShoppingListRepository {
     );
 
     return updated ? mapShoppingList(updated) : null;
+  }
+
+  /**
+   * Bulk-update match data for multiple items in a single list.
+   * Uses bulkWrite to avoid N individual round-trips.
+   */
+  async updateItemsMatchData(
+    userId: string,
+    listId: string,
+    updates: ItemMatchUpdate[],
+  ): Promise<ShoppingList | null> {
+    if (updates.length === 0) {
+      return this.findListByIdForUser(userId, listId);
+    }
+
+    const uid = this.toObjectId(userId);
+
+    const lid = this.toObjectId(listId);
+
+    await ShoppingListMongoose.bulkWrite(
+      updates.map((u) => ({
+        updateOne: {
+          filter: { _id: lid, userId: uid, 'items._id': this.toObjectId(u.itemId) },
+          update: {
+            $set: {
+              'items.$.normalizedName': u.normalizedName,
+              'items.$.matchStatus': u.matchStatus,
+              'items.$.matchedProduct': u.matchedProduct,
+              'items.$.selectionSource': u.selectionSource,
+            },
+          },
+        },
+      })),
+    );
+
+    const doc = await ShoppingListMongoose.findOne({ _id: listId, userId: uid });
+    return doc ? mapShoppingList(doc) : null;
   }
 
   // For purchased state, we have removed the purchased state from the model

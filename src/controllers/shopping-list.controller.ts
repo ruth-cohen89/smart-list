@@ -83,6 +83,14 @@ export class ShoppingListController {
     res.status(200).json(updated);
   });
 
+  matchActiveListItems = catchAsync(async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError('Not authenticated', 401);
+
+    const { updatedList, ambiguousItems } = await this.service.matchActiveListItems(req.user.id);
+
+    res.status(200).json({ updatedList, ambiguousItems });
+  });
+
   // toggleItemPurchasedInActiveList = catchAsync(async (req: Request, res: Response) => {
   //   if (!req.user) throw new AppError('Not authenticated', 401);
 
