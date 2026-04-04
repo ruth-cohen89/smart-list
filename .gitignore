@@ -1,7 +1,16 @@
 node_modules/
 dist/
 
-.env.development
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Secret keys / credentials
+*.json.key
+*-key.json
+*credentials*.json
+serviceAccountKey.json
 
 .idea/
 .vscode/
@@ -12,3 +21,11 @@ dist/
 .prettiercache
 
 *.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+uploads/
+tmp/
