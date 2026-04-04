@@ -1,17 +1,12 @@
 import { ChainProductRepository } from '../repositories/chain-product.repository';
 import { SUPPORTED_CHAINS } from '../models/chain-product.model';
 import type { ChainId } from '../models/chain-product.model';
-import { CHAIN_IMPORT_CONFIGS } from '../infrastructure/catalog-import/chain-import.config';
-import {
-  fetchListingPage,
-  parseFileLinks,
-  filterFiles,
-  pickLatestFile,
-  downloadFile,
-  decompressIfNeeded,
-} from '../infrastructure/catalog-import/chain-source.client';
+import { decompressIfNeeded } from '../infrastructure/catalog-import/chain-source.client';
 import { parsePriceXml } from '../infrastructure/catalog-import/price-file.parser';
 import { normalizeName } from '../utils/normalize';
+import { ramiLevyProvider } from '../infrastructure/catalog-import/providers/rami-levy.provider';
+import { osherAdProvider } from '../infrastructure/catalog-import/providers/osher-ad.provider';
+import { ShufersalProvider } from '../infrastructure/catalog-import/providers/shufersal.provider';
 
 // Result types
 
@@ -26,56 +21,54 @@ export interface ChainImportResult {
   error?: string;
 }
 
-// ─── Service ─────────────────────────────────────────────────────────────────
+// ─── Provider registry ────────────────────────────────────────────────────────
+
+interface CatalogProvider {
+  getLatestFile(): Promise<{ filename: string; rawData: Buffer } | null>;
+}
+
+const PROVIDERS: Record<ChainId, CatalogProvider> = {
+  'rami-levy': ramiLevyProvider,
+  'osher-ad': osherAdProvider,
+  shufersal: new ShufersalProvider(),
+};
+
+// ─── Service ──────────────────────────────────────────────────────────────────
 
 export class CatalogImportService {
   constructor(private readonly chainProductRepo: ChainProductRepository) {}
 
   /**
    * Run the full import pipeline for a single chain:
-   *  1. Fetch file listing page
-   *  2. Filter links → PriceFull files for the target branch
-   *  3. Pick the latest file
-   *  4. Download + decompress
-   *  5. Parse XML → products
-   *  6. Upsert each product into ChainProduct (activate + update lastSeenAt)
+   *  1. Provider fetches, filters, and downloads the latest PriceFull file
+   *  2. Decompress
+   *  3. Parse XML → products
+   *  4. Upsert each product into ChainProduct
    */
   async importChain(chainId: ChainId): Promise<ChainImportResult> {
-    const config = CHAIN_IMPORT_CONFIGS[chainId];
-    const now = new Date();
+    console.log(`[IMPORT] chainId: ${chainId}`);
+    const provider = PROVIDERS[chainId];
+    const file = await provider.getLatestFile();
 
-    // 1. Fetch file listing
-    const listingHtml = await fetchListingPage(config.listingUrl);
-
-    // 2. Filter: PriceFull files for the target store
-    const allLinks = parseFileLinks(listingHtml, config.listingUrl);
-    const filtered = filterFiles(allLinks, config.fileTypePrefix, config.targetStoreId);
-    const latest = pickLatestFile(filtered);
-
-    if (!latest) {
+    if (!file) {
       return {
         chainId,
         success: false,
         upsertedCount: 0,
         sourceFile: null,
-        error: `No ${config.fileTypePrefix} file found for store ${config.targetStoreId}`,
+        error: `No PriceFull file found for chain: ${chainId}`,
       };
     }
 
-    // 3. Download + 4. Decompress
-    const rawData = await downloadFile(latest.downloadUrl);
-    const xmlData = await decompressIfNeeded(rawData);
-
-    // 5. Parse XML
+    const xmlData = await decompressIfNeeded(file.rawData);
     const products = parsePriceXml(xmlData);
-
-    // 6. Upsert each product
+    const now = new Date();
     let upsertedCount = 0;
+
     for (const p of products) {
       await this.chainProductRepo.upsertProduct({
         chainId,
         externalId: p.itemCode,
-        // ItemCode in Israeli price files is the EAN barcode
         barcode: p.itemCode,
         originalName: p.itemName,
         normalizedName: normalizeName(p.itemName),
@@ -91,16 +84,13 @@ export class CatalogImportService {
       chainId,
       success: true,
       upsertedCount,
-      sourceFile: latest.filename,
+      sourceFile: file.filename,
     };
   }
 
   /**
    * Run the import pipeline for all supported chains sequentially.
-   * Chains run one after another (not in parallel) to avoid hammering chain servers.
    * A single chain failure does not abort the others.
-   *
-   * This method is the entry point for the future Cloud Run scheduled job.
    */
   async importAllChains(): Promise<ChainImportResult[]> {
     const results: ChainImportResult[] = [];
