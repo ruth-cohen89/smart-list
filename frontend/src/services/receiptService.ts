@@ -22,15 +22,10 @@ export const receiptService = {
     api.get<{ receipt: Receipt }>(`/receipts/${receiptId}`).then((r) => r.data.receipt),
 
   matchItems: (receiptId: string) =>
-    api
-      .post<MatchItemsResponse>(`/receipts/${receiptId}/match-items`)
-      .then((r) => r.data),
+    api.post<MatchItemsResponse>(`/receipts/${receiptId}/match-items`).then((r) => r.data),
 
   confirmMatches: (receiptId: string, payload: ConfirmMatchesPayload) =>
     api
-      .post<ConfirmMatchesResponse>(
-        `/receipts/${receiptId}/confirm-matches`,
-        payload
-      )
+      .post<ConfirmMatchesResponse>(`/receipts/${receiptId}/confirm-matches`, payload)
       .then((r) => r.data),
 };

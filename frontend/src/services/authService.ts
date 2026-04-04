@@ -18,19 +18,13 @@ export const authService = {
     api.post<AuthResponse>('/auth/login', payload).then((r) => r.data),
 
   forgotPassword: (payload: ForgotPasswordPayload) =>
-    api
-      .post<ForgotPasswordResponse>('/auth/forgot-password', payload)
-      .then((r) => r.data),
+    api.post<ForgotPasswordResponse>('/auth/forgot-password', payload).then((r) => r.data),
 
   resetPassword: (payload: ResetPasswordPayload) =>
-    api
-      .post<{ token: string }>('/auth/reset-password', payload)
-      .then((r) => r.data),
+    api.post<{ token: string }>('/auth/reset-password', payload).then((r) => r.data),
 
   changePassword: (payload: ChangePasswordPayload) =>
-    api
-      .patch<{ token: string }>('/auth/change-password', payload)
-      .then((r) => r.data),
+    api.patch<{ token: string }>('/auth/change-password', payload).then((r) => r.data),
 
   getMe: () => api.get<User>('/users/me').then((r) => r.data),
 
