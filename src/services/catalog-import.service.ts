@@ -104,6 +104,9 @@ export class CatalogImportService {
       upsertedCount++;
     }
 
+    const countInDb = await this.chainProductRepo.countByChain(chainId);
+    console.log(`[IMPORT] countDocuments in db after upsert loop: ${countInDb}`);
+
     return {
       chainId,
       success: true,

@@ -83,6 +83,10 @@ export class ChainProductRepository {
    * Products are never hard-deleted — they stay in the collection with isActive=false
    * so historical data is preserved and they can be reactivated if they reappear.
    */
+  async countByChain(chainId: ChainId): Promise<number> {
+    return ChainProductMongoose.countDocuments({ chainId });
+  }
+
   async markInactiveByExternalIds(chainId: ChainId, externalIds: string[]): Promise<void> {
     if (externalIds.length === 0) return;
 
