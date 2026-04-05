@@ -2,12 +2,13 @@
  * CerberusProvider — handles all interaction with the Cerberus price-file platform
  * (url.retail.publishedprices.co.il) used by Rami Levi, Osher Ad, and other chains.
  *
- * Login flow (two-step — CSRF required):
- *  1. GET /login  → obtain session cookie + csrftoken meta tag
- *  2. POST /login with user, password, csrftoken → session is now authenticated
- *  3. GET /file/json/dir → JSON array of { name, ... } file entries
- *  4. Filter + pick newest PriceFull file
- *  5. GET /file/d/<filename> → download (may redirect to CDN)
+ * Login flow (two-step — CSRF + full cookie jar required):
+ *  1. GET /login  → collect ALL Set-Cookie headers + extract csrftoken from HTML
+ *  2. POST /login with user, csrftoken, Referer, Origin + full cookie jar
+ *  3. Merge any new cookies from POST response into the jar
+ *  4. GET /file/json/dir with full cookie jar → JSON array of { name, ... }
+ *  5. Filter + pick newest PriceFull file
+ *  6. GET /file/d/<filename> → download (may redirect to CDN)
  */
 import https from 'https';
 import { URL } from 'url';
@@ -20,6 +21,38 @@ export interface ProviderFile {
   rawData: Buffer;
 }
 
+// ─── Minimal cookie jar ───────────────────────────────────────────────────────
+
+/** Parse Set-Cookie headers and return a name→value map of all cookies. */
+function parseSetCookies(headers: string[]): Record<string, string> {
+  const jar: Record<string, string> = {};
+  for (const header of headers) {
+    const [pair] = header.split(';');
+    const eq = pair.indexOf('=');
+    if (eq > 0) {
+      jar[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+    }
+  }
+  return jar;
+}
+
+/** Merge new cookies into an existing jar (new values win). */
+function mergeCookies(
+  jar: Record<string, string>,
+  incoming: Record<string, string>,
+): Record<string, string> {
+  return { ...jar, ...incoming };
+}
+
+/** Serialise a cookie jar into a Cookie header value. */
+function serializeCookies(jar: Record<string, string>): string {
+  return Object.entries(jar)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('; ');
+}
+
+// ─── Provider ─────────────────────────────────────────────────────────────────
+
 export class CerberusProvider {
   constructor(
     private readonly username: string,
@@ -28,7 +61,9 @@ export class CerberusProvider {
 
   // Read env at call time — NOT at module load time — so dotenv has already run.
   private get tlsAgent(): https.Agent | undefined {
-    const raw = String(process.env.CERBERUS_INSECURE_TLS ?? '').trim().toLowerCase();
+    const raw = String(process.env.CERBERUS_INSECURE_TLS ?? '')
+      .trim()
+      .toLowerCase();
     const insecure = raw === 'true';
     console.log(`[IMPORT] CERBERUS_INSECURE_TLS raw="${raw}" insecure=${insecure}`);
     return insecure ? new https.Agent({ rejectUnauthorized: false }) : undefined;
@@ -38,8 +73,8 @@ export class CerberusProvider {
     console.log(`[IMPORT] CerberusProvider start — user: ${this.username}`);
     console.log(`[IMPORT] source: ${BASE_URL}`);
 
-    const cookie = await this.login();
-    const allFiles = await this.listFiles(cookie);
+    const cookieJar = await this.login();
+    const allFiles = await this.listFiles(cookieJar);
 
     const filtered = allFiles.filter((name) => {
       if (!name.startsWith('PriceFull')) return false;
@@ -61,7 +96,7 @@ export class CerberusProvider {
     const downloadUrl = `${BASE_URL}/file/d/${latest}`;
     console.log(`[IMPORT] downloading: ${downloadUrl}`);
     try {
-      const rawData = await this.download(downloadUrl, cookie);
+      const rawData = await this.download(downloadUrl, cookieJar);
       console.log(`[IMPORT] download success: ${latest} (${rawData.length} bytes)`);
       return { filename: latest, rawData };
     } catch (err) {
@@ -77,61 +112,58 @@ export class CerberusProvider {
   // ─── Private helpers ────────────────────────────────────────────────────────
 
   /**
-   * Two-step login required by the retail Cerberus instance:
-   *  Step 1 — GET /login to receive the initial session cookie and csrftoken.
-   *  Step 2 — POST /login with user + csrftoken using the step-1 cookie.
-   *           A successful login keeps the same cookie but marks the session
-   *           authenticated server-side; an unsuccessful login rotates nothing
-   *           and every subsequent request redirects to /login.
+   * Two-step login. Returns a fully populated cookie jar for use on all
+   * subsequent requests within this import run.
    */
-  private async login(): Promise<string> {
+  private async login(): Promise<Record<string, string>> {
     const loginUrl = `${BASE_URL}/login`;
     console.log(`[IMPORT] login step 1 — GET ${loginUrl}`);
 
-    const { cookie: initCookie, csrf } = await this.fetchLoginPage();
-    console.log(`[IMPORT] login step 2 — POST ${loginUrl} user=${this.username} csrf=${csrf.slice(0, 8)}...`);
+    const { jar: jar1, csrf } = await this.fetchLoginPage();
+    console.log(`[IMPORT] cookies after GET /login: ${JSON.stringify(Object.keys(jar1))}`);
 
-    return this.postLogin(initCookie, csrf);
+    console.log(
+      `[IMPORT] login step 2 — POST ${loginUrl} user=${this.username} csrf=${csrf.slice(0, 8)}...`,
+    );
+    const jar2 = await this.postLogin(jar1, csrf);
+    console.log(`[IMPORT] cookies after POST /login: ${JSON.stringify(Object.keys(jar2))}`);
+
+    return jar2;
   }
 
-  private fetchLoginPage(): Promise<{ cookie: string; csrf: string }> {
+  private fetchLoginPage(): Promise<{ jar: Record<string, string>; csrf: string }> {
     const agent = this.tlsAgent;
     return new Promise((resolve, reject) => {
-      const req = https.get(
-        { hostname: CERBERUS_HOSTNAME, path: '/login', agent },
-        (res) => {
-          console.log(`[IMPORT] GET /login — status=${res.statusCode} content-type=${res.headers['content-type']}`);
-          const chunks: Buffer[] = [];
-          res.on('data', (c: Buffer) => chunks.push(c));
-          res.on('end', () => {
-            const body = Buffer.concat(chunks).toString('utf-8');
-            console.log(`[IMPORT] GET /login body preview: ${body.slice(0, 300)}`);
+      const req = https.get({ hostname: CERBERUS_HOSTNAME, path: '/login', agent }, (res) => {
+        console.log(
+          `[IMPORT] GET /login — status=${res.statusCode} content-type=${res.headers['content-type']}`,
+        );
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf-8');
+          console.log(`[IMPORT] GET /login body preview: ${body.slice(0, 300)}`);
 
-            const cookies = res.headers['set-cookie'] ?? [];
-            const cookieEntry = cookies.find((c) => c.startsWith('cftpSID='));
-            if (!cookieEntry) {
-              reject(new Error('Cerberus login page: no session cookie in response'));
-              return;
-            }
-            const cookie = cookieEntry.split(';')[0]; // "cftpSID=VALUE"
+          const jar = parseSetCookies(res.headers['set-cookie'] ?? []);
 
-            const csrfMatch = body.match(/csrftoken"\s+content="([^"]+)"/);
-            if (!csrfMatch) {
-              reject(new Error('Cerberus login page: csrftoken not found in HTML'));
-              return;
-            }
-            resolve({ cookie, csrf: csrfMatch[1] });
-          });
-          res.on('error', reject);
-        },
-      );
+          const csrfMatch = body.match(/csrftoken"\s+content="([^"]+)"/);
+          if (!csrfMatch) {
+            reject(new Error('Cerberus login page: csrftoken not found in HTML'));
+            return;
+          }
+          resolve({ jar, csrf: csrfMatch[1] });
+        });
+        res.on('error', reject);
+      });
       req.on('error', reject);
     });
   }
 
-  private postLogin(initCookie: string, csrf: string): Promise<string> {
+  private postLogin(jar: Record<string, string>, csrf: string): Promise<Record<string, string>> {
     const agent = this.tlsAgent;
     const body = `user=${encodeURIComponent(this.username)}&password=&csrftoken=${encodeURIComponent(csrf)}`;
+    const cookieHeader = serializeCookies(jar);
+
     return new Promise((resolve, reject) => {
       const req = https.request(
         {
@@ -142,19 +174,19 @@ export class CerberusProvider {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Content-Length': Buffer.byteLength(body),
-            Cookie: initCookie,
+            Cookie: cookieHeader,
+            Referer: `${BASE_URL}/login`,
+            Origin: BASE_URL,
           },
         },
         (res) => {
-          console.log(`[IMPORT] POST /login — status=${res.statusCode}`);
-          res.resume(); // drain body — we only need the cookie
-          const cookies = res.headers['set-cookie'] ?? [];
-          const entry = cookies.find((c) => c.startsWith('cftpSID='));
-          if (!entry) {
-            reject(new Error(`Cerberus login failed for "${this.username}": no session cookie in POST response`));
-            return;
-          }
-          resolve(entry.split(';')[0]); // "cftpSID=VALUE"
+          console.log(
+            `[IMPORT] POST /login — status=${res.statusCode} location=${res.headers['location'] ?? 'none'}`,
+          );
+          res.resume(); // drain body
+          const incoming = parseSetCookies(res.headers['set-cookie'] ?? []);
+          const merged = mergeCookies(jar, incoming);
+          resolve(merged);
         },
       );
       req.on('error', reject);
@@ -163,16 +195,26 @@ export class CerberusProvider {
     });
   }
 
-  private listFiles(cookie: string): Promise<string[]> {
+  private listFiles(jar: Record<string, string>): Promise<string[]> {
     const listUrl = `${BASE_URL}/file/json/dir`;
+    const cookieHeader = serializeCookies(jar);
     console.log(`[IMPORT] listing files — GET ${listUrl}`);
     const agent = this.tlsAgent;
+
     return new Promise((resolve, reject) => {
       const req = https.get(
-        { hostname: CERBERUS_HOSTNAME, path: '/file/json/dir', agent, headers: { Cookie: cookie } },
+        {
+          hostname: CERBERUS_HOSTNAME,
+          path: '/file/json/dir',
+          agent,
+          headers: { Cookie: cookieHeader },
+        },
         (res) => {
           const contentType = res.headers['content-type'] ?? 'unknown';
-          console.log(`[IMPORT] GET /file/json/dir — status=${res.statusCode} content-type=${contentType}`);
+          const location = res.headers['location'] ?? '';
+          console.log(
+            `[IMPORT] GET /file/json/dir — status=${res.statusCode} content-type=${contentType} location=${location || 'none'}`,
+          );
 
           const chunks: Buffer[] = [];
           res.on('data', (c: Buffer) => chunks.push(c));
@@ -180,11 +222,23 @@ export class CerberusProvider {
             const body = Buffer.concat(chunks).toString('utf-8');
             console.log(`[IMPORT] /file/json/dir body preview: ${body.slice(0, 400)}`);
 
+            if (res.statusCode === 302 || res.statusCode === 301) {
+              reject(
+                new Error(
+                  `Cerberus listing redirected to "${location}" (status=${res.statusCode}). ` +
+                    `Session is not authenticated. Login failed for user="${this.username}".`,
+                ),
+              );
+              return;
+            }
+
             if (contentType.includes('text/html')) {
-              reject(new Error(
-                `Cerberus listing returned HTML instead of JSON (status=${res.statusCode}). ` +
-                `Session may not be authenticated. Check credentials for user="${this.username}".`,
-              ));
+              reject(
+                new Error(
+                  `Cerberus listing returned HTML instead of JSON (status=${res.statusCode}). ` +
+                    `Session may not be authenticated for user="${this.username}".`,
+                ),
+              );
               return;
             }
 
@@ -195,7 +249,9 @@ export class CerberusProvider {
                 : [];
               resolve(names);
             } catch {
-              reject(new Error(`Cerberus listing: failed to parse JSON response — body: ${body.slice(0, 200)}`));
+              reject(
+                new Error(`Cerberus listing: failed to parse JSON — body: ${body.slice(0, 200)}`),
+              );
             }
           });
           res.on('error', reject);
@@ -205,7 +261,7 @@ export class CerberusProvider {
     });
   }
 
-  private download(url: string, cookie: string, redirectsLeft = 5): Promise<Buffer> {
+  private download(url: string, jar: Record<string, string>, redirectsLeft = 5): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const parsed = new URL(url);
       // CDN redirects land on a different hostname — only attach the insecure agent
@@ -216,12 +272,15 @@ export class CerberusProvider {
           hostname: parsed.hostname,
           path: parsed.pathname + parsed.search,
           agent: isCerberusHost ? this.tlsAgent : undefined,
-          headers: cookie ? { Cookie: cookie } : {},
+          headers: isCerberusHost ? { Cookie: serializeCookies(jar) } : {},
         },
         (res) => {
           const { statusCode, headers } = res;
           if (
-            (statusCode === 301 || statusCode === 302 || statusCode === 307 || statusCode === 308) &&
+            (statusCode === 301 ||
+              statusCode === 302 ||
+              statusCode === 307 ||
+              statusCode === 308) &&
             headers.location
           ) {
             res.resume();
@@ -230,7 +289,8 @@ export class CerberusProvider {
               return;
             }
             const next = new URL(headers.location, url).href;
-            this.download(next, '', redirectsLeft - 1).then(resolve, reject);
+            // Pass empty jar for CDN hops — they don't need the session cookie
+            this.download(next, {}, redirectsLeft - 1).then(resolve, reject);
             return;
           }
           const chunks: Buffer[] = [];
