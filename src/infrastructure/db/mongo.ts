@@ -7,7 +7,8 @@ export const connectMongo = async () => {
     }
 
     await mongoose.connect(process.env.MONGO_URI as string);
-    console.log('✅ MongoDB connected');
+    const { host, port, name } = mongoose.connection;
+    console.log(`✅ MongoDB connected — host: ${host}:${port}, db: ${name}`);
 
     mongoose.connection.on('error', (err) => {
       console.error('❌ Mongo error:', err);
