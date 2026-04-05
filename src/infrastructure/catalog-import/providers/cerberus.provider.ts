@@ -12,7 +12,7 @@
  *  6. Download file to memory as a Buffer
  *  7. Close connection
  */
-import { Client as FtpClient } from 'basic-ftp';
+import { Client as FtpClient, enterPassiveModeIPv4 } from 'basic-ftp';
 import { PassThrough } from 'stream';
 
 const FTP_HOST = 'url.retail.publishedprices.co.il';
@@ -34,6 +34,11 @@ export class CerberusProvider {
     console.log(`[IMPORT] CerberusProvider start — user: ${this.username} host: ${FTP_HOST}`);
 
     const client = new FtpClient();
+
+    // Force passive IPv4 — prevents ECONNRESET on data socket TLS handshake
+    // when the server returns an IPv6 or NAT-unfriendly PASV address.
+    client.prepareTransfer = enterPassiveModeIPv4;
+
     // Pipe basic-ftp's internal log to our logger so we can see AUTH TLS / PBSZ / PROT P
     client.ftp.log = (msg: string) => {
       if (msg.match(/AUTH|PBSZ|PROT|TLS|Login|security/i)) {
@@ -42,7 +47,7 @@ export class CerberusProvider {
     };
 
     console.log(
-      `[IMPORT] connecting — host: ${FTP_HOST} port: ${FTP_PORT} secure: true (explicit AUTH TLS)`,
+      `[IMPORT] connecting — host: ${FTP_HOST} port: ${FTP_PORT} secure: true (explicit AUTH TLS) passiveIPv4: forced`,
     );
 
     try {
@@ -52,16 +57,31 @@ export class CerberusProvider {
         user: this.username,
         password: FTP_PASSWORD,
         secure: true, // explicit TLS: plain connect on port 21, then AUTH TLS — matches Python FTP_TLS
-        secureOptions: { rejectUnauthorized: false },
+        secureOptions: {
+          rejectUnauthorized: false, // debugging — server cert chain is incomplete
+          minVersion: 'TLSv1.2',
+          maxVersion: 'TLSv1.2',
+        },
       });
       // At this point basic-ftp has completed: AUTH TLS → PBSZ 0 → PROT P → login
       console.log(
         `[IMPORT] FTP login success — user: ${this.username} hasTLS: ${client.ftp.hasTLS}`,
       );
 
-      // List all files in root
+      // pwd confirms the session is fully alive before issuing LIST
+      const pwd = await client.pwd();
+      console.log(`[IMPORT] pwd: ${pwd}`);
+
+      // List all files in root — retry once on ECONNRESET (transient data-socket TLS failure)
       console.log(`[IMPORT] list start — path: /`);
-      const listing = await client.list('/');
+      let listing;
+      try {
+        listing = await client.list('/');
+      } catch (listErr) {
+        const listErrCode = (listErr as NodeJS.ErrnoException).code ?? '';
+        console.warn(`[IMPORT] list attempt 1 failed — code: ${listErrCode} — retrying`);
+        listing = await client.list('/');
+      }
       const allNames = listing.filter((f) => f.isFile).map((f) => f.name);
       console.log(`[IMPORT] list end — total files: ${allNames.length}`);
 
