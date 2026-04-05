@@ -6,12 +6,22 @@ import type { ChainProduct, ChainId, UpsertChainProductData } from '../models/ch
 const NAME_CANDIDATE_LIMIT = 30;
 
 export class ChainProductRepository {
+  private _loggedTarget = false;
+
+  private logWriteTarget() {
+    if (this._loggedTarget) return;
+    this._loggedTarget = true;
+    const col = ChainProductMongoose.collection;
+    console.log(`[REPO] Writing to db="${col.dbName}" collection="${col.collectionName}"`);
+  }
+
   /**
    * Insert or update a product identified by { chainId, externalId }.
    * Also marks the product active and updates lastSeenAt.
    * Safe for concurrent import jobs — uses findOneAndUpdate with upsert.
    */
   async upsertProduct(data: UpsertChainProductData): Promise<ChainProduct> {
+    this.logWriteTarget();
     const doc = await ChainProductMongoose.findOneAndUpdate(
       { chainId: data.chainId, externalId: data.externalId },
       {

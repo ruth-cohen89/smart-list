@@ -85,7 +85,7 @@ export class CatalogImportService {
     let upsertedCount = 0;
 
     for (const p of products) {
-      await this.chainProductRepo.upsertProduct({
+      const saved = await this.chainProductRepo.upsertProduct({
         chainId,
         externalId: p.itemCode,
         barcode: p.itemCode,
@@ -96,6 +96,11 @@ export class CatalogImportService {
         unit: p.unitOfMeasure,
         lastSeenAt: now,
       });
+      if (upsertedCount === 0) {
+        console.log(
+          `[IMPORT] first upsert result id=${saved.id} externalId=${saved.externalId} name="${saved.originalName}"`,
+        );
+      }
       upsertedCount++;
     }
 
