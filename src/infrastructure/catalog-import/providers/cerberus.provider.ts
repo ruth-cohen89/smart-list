@@ -41,7 +41,7 @@ export class CerberusProvider {
         port: FTP_PORT,
         user: this.username,
         password: FTP_PASSWORD,
-        secure: 'implicit', // FTPS — matches Python FTP_TLS behaviour
+        secure: true, // explicit TLS (AUTH TLS on port 21) — matches Python ftplib.FTP_TLS
         secureOptions: { rejectUnauthorized: false }, // same cert issue as HTTP side
       });
       console.log(`[IMPORT] FTP connected — user: ${this.username}`);
