@@ -6,22 +6,12 @@ import type { ChainProduct, ChainId, UpsertChainProductData } from '../models/ch
 const NAME_CANDIDATE_LIMIT = 30;
 
 export class ChainProductRepository {
-  private _loggedTarget = false;
-
-  private logWriteTarget() {
-    if (this._loggedTarget) return;
-    this._loggedTarget = true;
-    const col = ChainProductMongoose.collection;
-    console.log(`[REPO] Writing to db="${col.dbName}" collection="${col.collectionName}"`);
-  }
-
   /**
    * Insert or update a product identified by { chainId, externalId }.
    * Also marks the product active and updates lastSeenAt.
    * Safe for concurrent import jobs — uses findOneAndUpdate with upsert.
    */
   async upsertProduct(data: UpsertChainProductData): Promise<ChainProduct> {
-    this.logWriteTarget();
     const doc = await ChainProductMongoose.findOneAndUpdate(
       { chainId: data.chainId, externalId: data.externalId },
       {
@@ -39,16 +29,25 @@ export class ChainProductRepository {
       { upsert: true, new: true },
     );
 
-    // findOneAndUpdate with upsert + new:true always returns a document
     if (!doc) throw new Error('upsertProduct: unexpected null document');
-
     return mapChainProduct(doc);
   }
 
   /**
+   * Mark all active products for a chain as inactive EXCEPT those in seenExternalIds.
+   * Called after an import loop to deactivate products no longer in the latest file.
+   * Returns the number of documents actually modified.
+   */
+  async markInactiveExcept(chainId: ChainId, seenExternalIds: string[]): Promise<number> {
+    const result = await ChainProductMongoose.updateMany(
+      { chainId, externalId: { $nin: seenExternalIds }, isActive: true },
+      { $set: { isActive: false } },
+    );
+    return result.modifiedCount;
+  }
+
+  /**
    * Find active products matching a barcode, optionally restricted to one chain.
-   * Returns all chains that carry this barcode when chainId is omitted —
-   * useful if we ever need cross-chain barcode lookup.
    */
   async findByBarcode(barcode: string, chainId?: ChainId): Promise<ChainProduct[]> {
     const filter: Record<string, unknown> = { barcode, isActive: true };
@@ -60,9 +59,7 @@ export class ChainProductRepository {
 
   /**
    * Fetch candidate products for name-based matching.
-   * Strategy: search for active products in the given chain whose normalizedName
-   * contains the first significant token of the input. Returns up to NAME_CANDIDATE_LIMIT
-   * results; the caller scores and ranks them in memory.
+   * Returns up to NAME_CANDIDATE_LIMIT results; the caller scores and ranks them.
    */
   async findCandidatesByName(normalizedName: string, chainId: ChainId): Promise<ChainProduct[]> {
     const firstToken = normalizedName.split(' ').find((t) => t.length >= 2) ?? normalizedName;
@@ -79,20 +76,20 @@ export class ChainProductRepository {
   }
 
   /**
-   * Mark products inactive when an import job no longer sees them.
-   * Products are never hard-deleted — they stay in the collection with isActive=false
-   * so historical data is preserved and they can be reactivated if they reappear.
+   * DEV ONLY — print a quick summary of what is stored for a chain.
+   * Call via verifyImport() on the service; never called in production flows.
    */
-  async countByChain(chainId: ChainId): Promise<number> {
-    return ChainProductMongoose.countDocuments({ chainId });
-  }
+  async verifyImport(chainId: ChainId): Promise<void> {
+    const total = await ChainProductMongoose.countDocuments({ chainId });
+    const active = await ChainProductMongoose.countDocuments({ chainId, isActive: true });
+    const inactive = total - active;
+    const samples = await ChainProductMongoose.find({ chainId }).limit(3).lean();
 
-  async markInactiveByExternalIds(chainId: ChainId, externalIds: string[]): Promise<void> {
-    if (externalIds.length === 0) return;
-
-    await ChainProductMongoose.updateMany(
-      { chainId, externalId: { $in: externalIds }, isActive: true },
-      { $set: { isActive: false } },
+    console.log(`[VERIFY] chainId=${chainId} total=${total} active=${active} inactive=${inactive}`);
+    samples.forEach((s, i) =>
+      console.log(
+        `[VERIFY] sample[${i}] externalId=${s.externalId} name="${s.originalName}" price=${s.price} isActive=${s.isActive}`,
+      ),
     );
   }
 }

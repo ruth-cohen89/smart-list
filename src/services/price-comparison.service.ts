@@ -66,14 +66,20 @@ export class PriceComparisonService {
 
   async compareActiveList(userId: string): Promise<ComparisonResult> {
     const activeList = await this.shoppingListRepo.getOrCreateActiveList(userId);
+    console.log(`[COMPARE] userId=${userId} listItems=${activeList.items.length}`);
 
     // Run all chains in parallel — each chain's matching is independent
     const chains = await Promise.all(
       SUPPORTED_CHAINS.map((chainId) => this.buildChainBasket(chainId, activeList.items)),
     );
 
-    const cheapestChainId = pickCheapestChain(chains);
+    chains.forEach((c) =>
+      console.log(
+        `[COMPARE] chain=${c.chainId} matched=${c.matchedItems.length} unmatched=${c.unmatchedItems.length} total=${c.matchedItems.length + c.unmatchedItems.length}`,
+      ),
+    );
 
+    const cheapestChainId = pickCheapestChain(chains);
     return { chains, cheapestChainId, comparedAt: new Date() };
   }
 
@@ -105,15 +111,16 @@ export class PriceComparisonService {
     item: ShoppingItem,
     chainId: ChainId,
   ): Promise<MatchedBasketItem | null> {
-    // Step 1 — barcode-first
+    // Step 1 — barcode-first; pick cheapest if multiple records share the same barcode
     if (item.barcode) {
       const barcodeMatches = await this.chainProductRepo.findByBarcode(item.barcode, chainId);
       if (barcodeMatches.length > 0) {
+        const cheapest = barcodeMatches.reduce((a, b) => (b.price < a.price ? b : a));
         return {
           shoppingItemId: item.id,
           shoppingItemName: item.name,
           itemQuantity: item.quantity,
-          product: barcodeMatches[0],
+          product: cheapest,
           matchSource: 'barcode',
           score: 1,
           isAmbiguous: false,

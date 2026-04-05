@@ -13,11 +13,10 @@ import { ShufersalProvider } from '../infrastructure/catalog-import/providers/sh
 export interface ChainImportResult {
   chainId: ChainId;
   success: boolean;
-  /** Number of products upserted into ChainProduct. */
   upsertedCount: number;
-  /** Filename that was downloaded and parsed. null when no file was found. */
+  skippedCount: number;
+  inactiveMarked: number;
   sourceFile: string | null;
-  /** Present when success is false. */
   error?: string;
 }
 
@@ -38,54 +37,33 @@ const PROVIDERS: Record<ChainId, CatalogProvider> = {
 export class CatalogImportService {
   constructor(private readonly chainProductRepo: ChainProductRepository) {}
 
-  /**
-   * Run the full import pipeline for a single chain:
-   *  1. Provider fetches, filters, and downloads the latest PriceFull file
-   *  2. Decompress
-   *  3. Parse XML → products
-   *  4. Upsert each product into ChainProduct
-   */
   async importChain(chainId: ChainId): Promise<ChainImportResult> {
-    console.log(`[IMPORT] chainId: ${chainId}`);
+    console.log(`[IMPORT] chainId=${chainId} starting`);
+
     const provider = PROVIDERS[chainId];
     const file = await provider.getLatestFile();
 
     if (!file) {
-      return {
-        chainId,
-        success: false,
-        upsertedCount: 0,
-        sourceFile: null,
-        error: `No PriceFull file found for chain: ${chainId}`,
-      };
+      return { chainId, success: false, upsertedCount: 0, skippedCount: 0, inactiveMarked: 0, sourceFile: null, error: `No PriceFull file found for chain: ${chainId}` };
     }
-
-    console.log(`[IMPORT] downloaded file: ${file.filename}`);
-    console.log(`[IMPORT] compressed size: ${file.rawData.length} bytes`);
 
     const xmlData = await decompressIfNeeded(file.rawData);
-    console.log(`[IMPORT] decompressed size: ${xmlData.length} bytes`);
-    console.log(`[IMPORT] content preview: ${xmlData.subarray(0, 300).toString('utf-8')}`);
-
     const products = parsePriceXml(xmlData);
-    console.log(`[IMPORT] parsed products: ${products.length}`);
-    if (products.length > 0) console.log(`[IMPORT] first product: ${JSON.stringify(products[0])}`);
 
-    if (products.length === 0) {
-      return {
-        chainId,
-        success: false,
-        upsertedCount: 0,
-        sourceFile: file.filename,
-        error: 'Parser returned 0 products',
-      };
-    }
-
+    // ── Validation + upsert loop ─────────────────────────────────────────────
     const now = new Date();
+    const seenExternalIds: string[] = [];
     let upsertedCount = 0;
+    let skippedCount = 0;
 
     for (const p of products) {
-      const saved = await this.chainProductRepo.upsertProduct({
+      // Lightweight validation — skip records that would fail DB constraints
+      if (!p.itemCode || !p.itemName || isNaN(p.itemPrice) || p.itemPrice < 0) {
+        skippedCount++;
+        continue;
+      }
+
+      await this.chainProductRepo.upsertProduct({
         chainId,
         externalId: p.itemCode,
         barcode: p.itemCode,
@@ -96,41 +74,33 @@ export class CatalogImportService {
         unit: p.unitOfMeasure,
         lastSeenAt: now,
       });
-      if (upsertedCount === 0) {
-        console.log(
-          `[IMPORT] first upsert result id=${saved.id} externalId=${saved.externalId} name="${saved.originalName}"`,
-        );
-      }
+
+      seenExternalIds.push(p.itemCode);
       upsertedCount++;
     }
 
-    const countInDb = await this.chainProductRepo.countByChain(chainId);
-    console.log(`[IMPORT] countDocuments in db after upsert loop: ${countInDb}`);
+    console.log(`[IMPORT] chainId=${chainId} parsed=${products.length} upserted=${upsertedCount} skipped=${skippedCount}`);
 
-    return {
-      chainId,
-      success: true,
-      upsertedCount,
-      sourceFile: file.filename,
-    };
+    // ── Mark disappeared products inactive ───────────────────────────────────
+    const inactiveMarked = await this.chainProductRepo.markInactiveExcept(chainId, seenExternalIds);
+    console.log(`[IMPORT] chainId=${chainId} inactiveMarked=${inactiveMarked}`);
+
+    return { chainId, success: true, upsertedCount, skippedCount, inactiveMarked, sourceFile: file.filename };
   }
 
-  /**
-   * Run the import pipeline for all supported chains sequentially.
-   * A single chain failure does not abort the others.
-   */
   async importAllChains(): Promise<ChainImportResult[]> {
     const results: ChainImportResult[] = [];
 
     for (const chainId of SUPPORTED_CHAINS) {
       try {
-        const result = await this.importChain(chainId);
-        results.push(result);
+        results.push(await this.importChain(chainId));
       } catch (err) {
         results.push({
           chainId,
           success: false,
           upsertedCount: 0,
+          skippedCount: 0,
+          inactiveMarked: 0,
           sourceFile: null,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -138,5 +108,10 @@ export class CatalogImportService {
     }
 
     return results;
+  }
+
+  /** DEV ONLY — verify what is stored in Mongo for a chain after import. */
+  async verifyImport(chainId: ChainId): Promise<void> {
+    await this.chainProductRepo.verifyImport(chainId);
   }
 }
