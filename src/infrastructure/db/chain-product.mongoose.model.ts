@@ -36,13 +36,23 @@ const ChainProductSchema = new Schema<IChainProductDocument>(
   { timestamps: true },
 );
 
-// Primary upsert key: each chain has at most one record per externalId
+// Upsert key for catalog import: unique product per chain.
+// chainId first — all import writes are scoped to one chain.
 ChainProductSchema.index({ chainId: 1, externalId: 1 }, { unique: true });
 
-// Fast barcode lookups (sparse — barcode is optional)
-ChainProductSchema.index({ barcode: 1, chainId: 1 }, { sparse: true });
+// Within-chain barcode match (primary match path).
+// chainId first because every query is already scoped to a chain.
+// isActive last — low cardinality, but narrows the result set cheaply after the equality hits.
+// sparse: barcode is optional, omit null entries from the index.
+ChainProductSchema.index({ chainId: 1, barcode: 1, isActive: 1 }, { sparse: true });
 
-// Candidate name search per chain
-ChainProductSchema.index({ normalizedName: 1, chainId: 1 });
+// Within-chain name search (fallback match path, regex on normalizedName).
+// chainId first to restrict the scan to one chain before the regex runs.
+ChainProductSchema.index({ chainId: 1, normalizedName: 1, isActive: 1 });
+
+// Cross-chain barcode lookup for price comparison (no chainId filter).
+// barcode first — this is the lookup key across all chains.
+// sparse: omit documents where barcode is absent.
+ChainProductSchema.index({ barcode: 1, isActive: 1 }, { sparse: true });
 
 export default mongoose.model<IChainProductDocument>('ChainProduct', ChainProductSchema);
