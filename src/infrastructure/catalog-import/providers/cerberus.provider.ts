@@ -1,18 +1,18 @@
 /**
  * CerberusProvider — handles all interaction with the Cerberus price-file platform
- * (url.publishedprices.co.il) used by Rami Levi, Osher Ad, and other chains.
+ * (url.retail.publishedprices.co.il) used by Rami Levi, Osher Ad, and other chains.
  *
- * Responsibilities:
- *  - session login (username + empty password)
- *  - listing available files via the JSON API
- *  - filtering to PriceFull files, optionally by storeId
- *  - picking the newest file
- *  - downloading the raw file bytes
+ * Login flow (two-step — CSRF required):
+ *  1. GET /login  → obtain session cookie + csrftoken meta tag
+ *  2. POST /login with user, password, csrftoken → session is now authenticated
+ *  3. GET /file/json/dir → JSON array of { name, ... } file entries
+ *  4. Filter + pick newest PriceFull file
+ *  5. GET /file/d/<filename> → download (may redirect to CDN)
  */
 import https from 'https';
 import { URL } from 'url';
 
-const BASE_URL = 'https://url.publishedprices.co.il';
+const BASE_URL = 'https://url.retail.publishedprices.co.il';
 const CERBERUS_HOSTNAME = new URL(BASE_URL).hostname;
 
 export interface ProviderFile {
@@ -67,18 +67,71 @@ export class CerberusProvider {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`[IMPORT] download failure — url: ${downloadUrl} code: ${code} message: ${message}`);
+      console.error(
+        `[IMPORT] download failure — url: ${downloadUrl} code: ${code} message: ${message}`,
+      );
       throw err;
     }
   }
 
   // ─── Private helpers ────────────────────────────────────────────────────────
 
-  private login(): Promise<string> {
-    const body = `user=${encodeURIComponent(this.username)}&password=`;
+  /**
+   * Two-step login required by the retail Cerberus instance:
+   *  Step 1 — GET /login to receive the initial session cookie and csrftoken.
+   *  Step 2 — POST /login with user + csrftoken using the step-1 cookie.
+   *           A successful login keeps the same cookie but marks the session
+   *           authenticated server-side; an unsuccessful login rotates nothing
+   *           and every subsequent request redirects to /login.
+   */
+  private async login(): Promise<string> {
     const loginUrl = `${BASE_URL}/login`;
+    console.log(`[IMPORT] login step 1 — GET ${loginUrl}`);
+
+    const { cookie: initCookie, csrf } = await this.fetchLoginPage();
+    console.log(`[IMPORT] login step 2 — POST ${loginUrl} user=${this.username} csrf=${csrf.slice(0, 8)}...`);
+
+    return this.postLogin(initCookie, csrf);
+  }
+
+  private fetchLoginPage(): Promise<{ cookie: string; csrf: string }> {
     const agent = this.tlsAgent;
-    console.log(`[IMPORT] login url: ${loginUrl}`);
+    return new Promise((resolve, reject) => {
+      const req = https.get(
+        { hostname: CERBERUS_HOSTNAME, path: '/login', agent },
+        (res) => {
+          console.log(`[IMPORT] GET /login — status=${res.statusCode} content-type=${res.headers['content-type']}`);
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => {
+            const body = Buffer.concat(chunks).toString('utf-8');
+            console.log(`[IMPORT] GET /login body preview: ${body.slice(0, 300)}`);
+
+            const cookies = res.headers['set-cookie'] ?? [];
+            const cookieEntry = cookies.find((c) => c.startsWith('cftpSID='));
+            if (!cookieEntry) {
+              reject(new Error('Cerberus login page: no session cookie in response'));
+              return;
+            }
+            const cookie = cookieEntry.split(';')[0]; // "cftpSID=VALUE"
+
+            const csrfMatch = body.match(/csrftoken"\s+content="([^"]+)"/);
+            if (!csrfMatch) {
+              reject(new Error('Cerberus login page: csrftoken not found in HTML'));
+              return;
+            }
+            resolve({ cookie, csrf: csrfMatch[1] });
+          });
+          res.on('error', reject);
+        },
+      );
+      req.on('error', reject);
+    });
+  }
+
+  private postLogin(initCookie: string, csrf: string): Promise<string> {
+    const agent = this.tlsAgent;
+    const body = `user=${encodeURIComponent(this.username)}&password=&csrftoken=${encodeURIComponent(csrf)}`;
     return new Promise((resolve, reject) => {
       const req = https.request(
         {
@@ -89,14 +142,16 @@ export class CerberusProvider {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Content-Length': Buffer.byteLength(body),
+            Cookie: initCookie,
           },
         },
         (res) => {
+          console.log(`[IMPORT] POST /login — status=${res.statusCode}`);
           res.resume(); // drain body — we only need the cookie
           const cookies = res.headers['set-cookie'] ?? [];
           const entry = cookies.find((c) => c.startsWith('cftpSID='));
           if (!entry) {
-            reject(new Error(`Cerberus login failed for "${this.username}": no session cookie`));
+            reject(new Error(`Cerberus login failed for "${this.username}": no session cookie in POST response`));
             return;
           }
           resolve(entry.split(';')[0]); // "cftpSID=VALUE"
@@ -109,26 +164,38 @@ export class CerberusProvider {
   }
 
   private listFiles(cookie: string): Promise<string[]> {
+    const listUrl = `${BASE_URL}/file/json/dir`;
+    console.log(`[IMPORT] listing files — GET ${listUrl}`);
+    const agent = this.tlsAgent;
     return new Promise((resolve, reject) => {
       const req = https.get(
-        {
-          hostname: CERBERUS_HOSTNAME,
-          path: '/file/json/dir',
-          agent: this.tlsAgent,
-          headers: { Cookie: cookie },
-        },
+        { hostname: CERBERUS_HOSTNAME, path: '/file/json/dir', agent, headers: { Cookie: cookie } },
         (res) => {
+          const contentType = res.headers['content-type'] ?? 'unknown';
+          console.log(`[IMPORT] GET /file/json/dir — status=${res.statusCode} content-type=${contentType}`);
+
           const chunks: Buffer[] = [];
           res.on('data', (c: Buffer) => chunks.push(c));
           res.on('end', () => {
+            const body = Buffer.concat(chunks).toString('utf-8');
+            console.log(`[IMPORT] /file/json/dir body preview: ${body.slice(0, 400)}`);
+
+            if (contentType.includes('text/html')) {
+              reject(new Error(
+                `Cerberus listing returned HTML instead of JSON (status=${res.statusCode}). ` +
+                `Session may not be authenticated. Check credentials for user="${this.username}".`,
+              ));
+              return;
+            }
+
             try {
-              const json: unknown = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+              const json: unknown = JSON.parse(body);
               const names = Array.isArray(json)
                 ? (json as Array<{ name?: string }>).map((f) => f.name ?? '').filter(Boolean)
                 : [];
               resolve(names);
             } catch {
-              reject(new Error('Failed to parse Cerberus file listing JSON'));
+              reject(new Error(`Cerberus listing: failed to parse JSON response — body: ${body.slice(0, 200)}`));
             }
           });
           res.on('error', reject);
@@ -154,10 +221,7 @@ export class CerberusProvider {
         (res) => {
           const { statusCode, headers } = res;
           if (
-            (statusCode === 301 ||
-              statusCode === 302 ||
-              statusCode === 307 ||
-              statusCode === 308) &&
+            (statusCode === 301 || statusCode === 302 || statusCode === 307 || statusCode === 308) &&
             headers.location
           ) {
             res.resume();
@@ -165,7 +229,6 @@ export class CerberusProvider {
               reject(new Error(`Too many redirects downloading: ${url}`));
               return;
             }
-            // CDN redirects don't need the session cookie
             const next = new URL(headers.location, url).href;
             this.download(next, '', redirectsLeft - 1).then(resolve, reject);
             return;
