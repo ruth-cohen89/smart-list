@@ -14,6 +14,12 @@ import { URL } from 'url';
 
 const BASE_URL = 'https://url.publishedprices.co.il';
 
+// When CERBERUS_INSECURE_TLS=true, bypass certificate verification for this
+// host only (incomplete chain on url.publishedprices.co.il in some Node versions).
+// Never enabled in production — SSL verification stays on unless the flag is set.
+const insecureTls = process.env.CERBERUS_INSECURE_TLS === 'true';
+const tlsAgent = insecureTls ? new https.Agent({ rejectUnauthorized: false }) : undefined;
+
 export interface ProviderFile {
   filename: string;
   rawData: Buffer;
@@ -28,6 +34,7 @@ export class CerberusProvider {
   async getLatestFile(): Promise<ProviderFile | null> {
     console.log(`[IMPORT] CerberusProvider start — user: ${this.username}`);
     console.log(`[IMPORT] source: ${BASE_URL}`);
+    console.log(`[IMPORT] TLS insecure mode: ${insecureTls}`);
 
     const cookie = await this.login();
     const allFiles = await this.listFiles(cookie);
@@ -49,12 +56,16 @@ export class CerberusProvider {
     const latest = filtered.reduce((a, b) => (b.localeCompare(a) > 0 ? b : a));
     console.log(`[IMPORT] selected file: ${latest}`);
 
+    const downloadUrl = `${BASE_URL}/file/d/${latest}`;
+    console.log(`[IMPORT] downloading: ${downloadUrl}`);
     try {
-      const rawData = await this.download(`${BASE_URL}/file/d/${latest}`, cookie);
+      const rawData = await this.download(downloadUrl, cookie);
       console.log(`[IMPORT] download success: ${latest} (${rawData.length} bytes)`);
       return { filename: latest, rawData };
     } catch (err) {
-      console.error(`[IMPORT] download failure: ${err instanceof Error ? err.message : String(err)}`);
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[IMPORT] download failure — url: ${downloadUrl} code: ${code} message: ${message}`);
       throw err;
     }
   }
@@ -63,12 +74,15 @@ export class CerberusProvider {
 
   private login(): Promise<string> {
     const body = `user=${encodeURIComponent(this.username)}&password=`;
+    const loginUrl = `${BASE_URL}/login`;
+    console.log(`[IMPORT] login url: ${loginUrl}`);
     return new Promise((resolve, reject) => {
       const req = https.request(
         {
           hostname: new URL(BASE_URL).hostname,
           path: '/login',
           method: 'POST',
+          agent: tlsAgent,
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Content-Length': Buffer.byteLength(body),
@@ -97,6 +111,7 @@ export class CerberusProvider {
         {
           hostname: new URL(BASE_URL).hostname,
           path: '/file/json/dir',
+          agent: tlsAgent,
           headers: { Cookie: cookie },
         },
         (res) => {
@@ -123,10 +138,14 @@ export class CerberusProvider {
   private download(url: string, cookie: string, redirectsLeft = 5): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const parsed = new URL(url);
+      // CDN redirects land on a different hostname — only attach the insecure agent
+      // for the Cerberus host; CDN responses use valid certs and don't need it.
+      const isCerberusHost = parsed.hostname === new URL(BASE_URL).hostname;
       const req = https.get(
         {
           hostname: parsed.hostname,
           path: parsed.pathname + parsed.search,
+          agent: isCerberusHost ? tlsAgent : undefined,
           headers: cookie ? { Cookie: cookie } : {},
         },
         (res) => {
