@@ -13,12 +13,7 @@ import https from 'https';
 import { URL } from 'url';
 
 const BASE_URL = 'https://url.publishedprices.co.il';
-
-// When CERBERUS_INSECURE_TLS=true, bypass certificate verification for this
-// host only (incomplete chain on url.publishedprices.co.il in some Node versions).
-// Never enabled in production — SSL verification stays on unless the flag is set.
-const insecureTls = process.env.CERBERUS_INSECURE_TLS === 'true';
-const tlsAgent = insecureTls ? new https.Agent({ rejectUnauthorized: false }) : undefined;
+const CERBERUS_HOSTNAME = new URL(BASE_URL).hostname;
 
 export interface ProviderFile {
   filename: string;
@@ -31,10 +26,17 @@ export class CerberusProvider {
     private readonly storeId?: string,
   ) {}
 
+  // Read env at call time — NOT at module load time — so dotenv has already run.
+  private get tlsAgent(): https.Agent | undefined {
+    const raw = String(process.env.CERBERUS_INSECURE_TLS ?? '').trim().toLowerCase();
+    const insecure = raw === 'true';
+    console.log(`[IMPORT] CERBERUS_INSECURE_TLS raw="${raw}" insecure=${insecure}`);
+    return insecure ? new https.Agent({ rejectUnauthorized: false }) : undefined;
+  }
+
   async getLatestFile(): Promise<ProviderFile | null> {
     console.log(`[IMPORT] CerberusProvider start — user: ${this.username}`);
     console.log(`[IMPORT] source: ${BASE_URL}`);
-    console.log(`[IMPORT] TLS insecure mode: ${insecureTls}`);
 
     const cookie = await this.login();
     const allFiles = await this.listFiles(cookie);
@@ -75,14 +77,15 @@ export class CerberusProvider {
   private login(): Promise<string> {
     const body = `user=${encodeURIComponent(this.username)}&password=`;
     const loginUrl = `${BASE_URL}/login`;
+    const agent = this.tlsAgent;
     console.log(`[IMPORT] login url: ${loginUrl}`);
     return new Promise((resolve, reject) => {
       const req = https.request(
         {
-          hostname: new URL(BASE_URL).hostname,
+          hostname: CERBERUS_HOSTNAME,
           path: '/login',
           method: 'POST',
-          agent: tlsAgent,
+          agent,
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Content-Length': Buffer.byteLength(body),
@@ -109,9 +112,9 @@ export class CerberusProvider {
     return new Promise((resolve, reject) => {
       const req = https.get(
         {
-          hostname: new URL(BASE_URL).hostname,
+          hostname: CERBERUS_HOSTNAME,
           path: '/file/json/dir',
-          agent: tlsAgent,
+          agent: this.tlsAgent,
           headers: { Cookie: cookie },
         },
         (res) => {
@@ -140,12 +143,12 @@ export class CerberusProvider {
       const parsed = new URL(url);
       // CDN redirects land on a different hostname — only attach the insecure agent
       // for the Cerberus host; CDN responses use valid certs and don't need it.
-      const isCerberusHost = parsed.hostname === new URL(BASE_URL).hostname;
+      const isCerberusHost = parsed.hostname === CERBERUS_HOSTNAME;
       const req = https.get(
         {
           hostname: parsed.hostname,
           path: parsed.pathname + parsed.search,
-          agent: isCerberusHost ? tlsAgent : undefined,
+          agent: isCerberusHost ? this.tlsAgent : undefined,
           headers: cookie ? { Cookie: cookie } : {},
         },
         (res) => {
