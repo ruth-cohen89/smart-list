@@ -65,27 +65,49 @@ export class CerberusProvider {
       const allNames = listing.filter((f) => f.isFile).map((f) => f.name);
       console.log(`[IMPORT] list end — total files: ${allNames.length}`);
 
-      // Filter to PriceFull files, optionally matching storeId
-      const filtered = allNames.filter((name) => {
-        if (!name.toLowerCase().startsWith('pricefull')) return false;
-        if (!name.match(/\.(xml|gz)$/i)) return false;
-        if (!this.storeId) return true;
-        const id = this.storeId.replace(/^0+/, '') || this.storeId;
-        return new RegExp(`-0*${id}-`).test(name);
-      });
+      // Build a storeId regex once — strips leading zeros, matches both padded/unpadded
+      const storeIdRe = this.storeId
+        ? new RegExp(`-0*${this.storeId.replace(/^0+/, '') || this.storeId}-`)
+        : null;
 
-      console.log(
-        `[IMPORT] files found after filter: ${filtered.length} storeId: ${this.storeId ?? 'any'}`,
+      const matchesStore = (name: string) => !storeIdRe || storeIdRe.test(name);
+      const isValidExt = (name: string) => /\.(xml|gz)$/i.test(name);
+
+      // 1. Try PriceFull files for this storeId
+      const priceFullFiles = allNames.filter(
+        (name) => name.toLowerCase().startsWith('pricefull') && isValidExt(name) && matchesStore(name),
       );
 
-      if (filtered.length === 0) {
-        console.log(`[IMPORT] no PriceFull file found`);
+      // 2. Fall back to Price (non-Full) files for this storeId if PriceFull is empty
+      const priceFiles =
+        priceFullFiles.length === 0
+          ? allNames.filter(
+              (name) =>
+                name.toLowerCase().startsWith('price') &&
+                !name.toLowerCase().startsWith('pricefull') &&
+                isValidExt(name) &&
+                matchesStore(name),
+            )
+          : [];
+
+      const usedFallback = priceFullFiles.length === 0 && priceFiles.length > 0;
+      const candidates = priceFullFiles.length > 0 ? priceFullFiles : priceFiles;
+      const fileType = priceFullFiles.length > 0 ? 'PriceFull' : 'Price';
+
+      console.log(
+        `[IMPORT] PriceFull candidates: ${priceFullFiles.length} Price candidates: ${priceFiles.length} storeId: ${this.storeId ?? 'any'}`,
+      );
+
+      if (candidates.length === 0) {
+        console.log(`[IMPORT] no Price or PriceFull file found for storeId: ${this.storeId ?? 'any'}`);
         return null;
       }
 
       // Pick newest by lex sort — timestamp is embedded in the filename
-      const latest = filtered.reduce((a, b) => (b.localeCompare(a) > 0 ? b : a));
-      console.log(`[IMPORT] selected file: ${latest}`);
+      const latest = candidates.reduce((a, b) => (b.localeCompare(a) > 0 ? b : a));
+      console.log(
+        `[IMPORT] selected file: ${latest} type: ${fileType} storeId: ${this.storeId ?? 'any'} fallback: ${usedFallback}`,
+      );
 
       // Download to memory
       console.log(`[IMPORT] download start — file: ${latest}`);
