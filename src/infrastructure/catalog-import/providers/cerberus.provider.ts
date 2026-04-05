@@ -3,8 +3,9 @@
  * (url.retail.publishedprices.co.il, port 21) used by Rami Levi, Osher Ad, and other chains.
  *
  * Flow (identical to the reference Python scraper):
- *  1. Connect via FTPS (FTP over TLS, implicit or explicit)
+ *  1. Connect via explicit FTPS: plain TCP on port 21, then AUTH TLS (= Python FTP_TLS)
  *  2. Login with username + empty password
+ *     useDefaultSettings() then sends PBSZ 0 + PROT P to protect data connections
  *  3. List files in the root directory
  *  4. Filter to PriceFull files, optionally by storeId
  *  5. Pick the newest file by filename (timestamp embedded)
@@ -33,7 +34,16 @@ export class CerberusProvider {
     console.log(`[IMPORT] CerberusProvider start — user: ${this.username} host: ${FTP_HOST}`);
 
     const client = new FtpClient();
-    client.ftp.verbose = false; // set true to see raw FTP commands
+    // Pipe basic-ftp's internal log to our logger so we can see AUTH TLS / PBSZ / PROT P
+    client.ftp.log = (msg: string) => {
+      if (msg.match(/AUTH|PBSZ|PROT|TLS|Login|security/i)) {
+        console.log(`[IMPORT][FTP] ${msg}`);
+      }
+    };
+
+    console.log(
+      `[IMPORT] connecting — host: ${FTP_HOST} port: ${FTP_PORT} secure: true (explicit AUTH TLS)`,
+    );
 
     try {
       await client.access({
@@ -41,16 +51,19 @@ export class CerberusProvider {
         port: FTP_PORT,
         user: this.username,
         password: FTP_PASSWORD,
-        secure: true, // explicit TLS (AUTH TLS on port 21) — matches Python ftplib.FTP_TLS
-        secureOptions: { rejectUnauthorized: false }, // same cert issue as HTTP side
+        secure: true, // explicit TLS: plain connect on port 21, then AUTH TLS — matches Python FTP_TLS
+        secureOptions: { rejectUnauthorized: false },
       });
-      console.log(`[IMPORT] FTP connected — user: ${this.username}`);
+      // At this point basic-ftp has completed: AUTH TLS → PBSZ 0 → PROT P → login
+      console.log(
+        `[IMPORT] FTP login success — user: ${this.username} hasTLS: ${client.ftp.hasTLS}`,
+      );
 
       // List all files in root
+      console.log(`[IMPORT] list start — path: /`);
       const listing = await client.list('/');
       const allNames = listing.filter((f) => f.isFile).map((f) => f.name);
-
-      console.log(`[IMPORT] FTP total files listed: ${allNames.length}`);
+      console.log(`[IMPORT] list end — total files: ${allNames.length}`);
 
       // Filter to PriceFull files, optionally matching storeId
       const filtered = allNames.filter((name) => {
@@ -75,8 +88,9 @@ export class CerberusProvider {
       console.log(`[IMPORT] selected file: ${latest}`);
 
       // Download to memory
+      console.log(`[IMPORT] download start — file: ${latest}`);
       const rawData = await this.downloadToBuffer(client, latest);
-      console.log(`[IMPORT] download success: ${latest} (${rawData.length} bytes)`);
+      console.log(`[IMPORT] download end — file: ${latest} size: ${rawData.length} bytes`);
 
       return { filename: latest, rawData };
     } catch (err) {
