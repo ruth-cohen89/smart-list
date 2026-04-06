@@ -101,51 +101,68 @@ function parseMatrixRows(html: string): MatrixRow[] {
   return rows;
 }
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
+// ─── Shared fetch helper ──────────────────────────────────────────────────────
+
+/**
+ * Shared logic for fetching the latest Machsanei Hashuk file by prefix.
+ * Used by both the price provider (PriceFull) and the promo provider (PromoFull).
+ */
+async function getLatestMatrixFile(filePrefix: string): Promise<ProviderFile | null> {
+  console.log(`[IMPORT] MachsaneiHashuk — source: ${LISTING_URL} prefix: ${filePrefix}`);
+
+  const html = await fetchListingPage(LISTING_URL);
+  console.log(`[IMPORT] listing page fetched — length: ${html.length} chars`);
+
+  const allRows = parseMatrixRows(html);
+  console.log(`[IMPORT] total table rows parsed: ${allRows.length}`);
+
+  // Step 1: filter by chain name
+  const byChain = allRows.filter((r) => r.chainName.includes(TARGET_CHAIN_NAME));
+  console.log(`[IMPORT] rows matching chainName "${TARGET_CHAIN_NAME}": ${byChain.length}`);
+
+  // Step 2: strict filter — prefix + storeId + chainId
+  const normalizedTargetStore = TARGET_STORE_ID.replace(/^0+/, '') || TARGET_STORE_ID;
+  const prefixLower = filePrefix.toLowerCase();
+  const candidates = byChain.filter(
+    (r) =>
+      r.filename.toLowerCase().startsWith(prefixLower) &&
+      r.storeId === normalizedTargetStore &&
+      MACHSANEI_HASHUK_CHAIN_IDS.has(r.chainId),
+  );
+  console.log(
+    `[IMPORT] ${filePrefix} candidates (storeId=${TARGET_STORE_ID}, chainIds=${[...MACHSANEI_HASHUK_CHAIN_IDS].join('/')}): ${candidates.length}`,
+  );
+  if (candidates.length > 0) {
+    console.log(`[IMPORT] candidate files: ${candidates.map((c) => c.filename).join(', ')}`);
+  }
+
+  if (candidates.length === 0) {
+    console.log(
+      `[IMPORT] no ${filePrefix} file found for chainName="${TARGET_CHAIN_NAME}" storeId=${TARGET_STORE_ID}`,
+    );
+    return null;
+  }
+
+  // Step 3: pick newest by lex sort — timestamp is embedded in filename
+  const latest = candidates.reduce((a, b) => (b.filename.localeCompare(a.filename) > 0 ? b : a));
+  console.log(`[IMPORT] selected file: ${latest.filename} url: ${latest.downloadUrl}`);
+
+  const rawData = await downloadFile(latest.downloadUrl);
+  console.log(`[IMPORT] download success: ${latest.filename} (${rawData.length} bytes)`);
+
+  return { filename: latest.filename, rawData };
+}
+
+// ─── Providers ────────────────────────────────────────────────────────────────
 
 export const machsaneiHashukProvider = {
-  async getLatestFile(): Promise<ProviderFile | null> {
-    console.log(`[IMPORT] MachsaneiHashukProvider start — source: ${LISTING_URL}`);
+  getLatestFile(): Promise<ProviderFile | null> {
+    return getLatestMatrixFile('PriceFull');
+  },
+};
 
-    const html = await fetchListingPage(LISTING_URL);
-    console.log(`[IMPORT] listing page fetched — length: ${html.length} chars`);
-
-    const allRows = parseMatrixRows(html);
-    console.log(`[IMPORT] total table rows parsed: ${allRows.length}`);
-
-    // Step 1: filter by chain name
-    const byChain = allRows.filter((r) => r.chainName.includes(TARGET_CHAIN_NAME));
-    console.log(`[IMPORT] rows matching chainName "${TARGET_CHAIN_NAME}": ${byChain.length}`);
-
-    // Step 2: strict filter — PriceFull + storeId + chainId
-    const normalizedTargetStore = TARGET_STORE_ID.replace(/^0+/, '') || TARGET_STORE_ID;
-    const candidates = byChain.filter(
-      (r) =>
-        r.filename.toLowerCase().startsWith('pricefull') &&
-        r.storeId === normalizedTargetStore &&
-        MACHSANEI_HASHUK_CHAIN_IDS.has(r.chainId),
-    );
-    console.log(
-      `[IMPORT] PriceFull candidates (storeId=${TARGET_STORE_ID}, chainIds=${[...MACHSANEI_HASHUK_CHAIN_IDS].join('/')}): ${candidates.length}`,
-    );
-    if (candidates.length > 0) {
-      console.log(`[IMPORT] candidate files: ${candidates.map((c) => c.filename).join(', ')}`);
-    }
-
-    if (candidates.length === 0) {
-      console.log(
-        `[IMPORT] no PriceFull file found for chainName="${TARGET_CHAIN_NAME}" storeId=${TARGET_STORE_ID}`,
-      );
-      return null;
-    }
-
-    // Step 3: pick newest by lex sort — timestamp is embedded in filename
-    const latest = candidates.reduce((a, b) => (b.filename.localeCompare(a.filename) > 0 ? b : a));
-    console.log(`[IMPORT] selected file: ${latest.filename} url: ${latest.downloadUrl}`);
-
-    const rawData = await downloadFile(latest.downloadUrl);
-    console.log(`[IMPORT] download success: ${latest.filename} (${rawData.length} bytes)`);
-
-    return { filename: latest.filename, rawData };
+export const machsaneiHashukPromoProvider = {
+  getLatestFile(): Promise<ProviderFile | null> {
+    return getLatestMatrixFile('PromoFull');
   },
 };

@@ -6,6 +6,7 @@ import consumptionProfileRouter from './consumption-profile.routes';
 import receiptsRouter from './receipts.routes';
 import priceComparisonRouter from './price-comparison.routes';
 import catalogImportRouter from './catalog-import.routes';
+import promoImportRouter from './promo-import.routes';
 import healthRouter from './health.routes';
 
 const router = Router();
@@ -17,6 +18,7 @@ router.use('/consumption-profile', consumptionProfileRouter);
 router.use('/receipts', receiptsRouter);
 router.use('/price-comparison', priceComparisonRouter);
 router.use('/catalog-import', catalogImportRouter);
+router.use('/promo-import', promoImportRouter);
 
 router.use('/health', healthRouter);
 

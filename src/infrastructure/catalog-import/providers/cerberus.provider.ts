@@ -28,6 +28,8 @@ export class CerberusProvider {
   constructor(
     private readonly username: string,
     private readonly storeId?: string,
+    /** Lowercase prefix to match against filenames. Defaults to 'pricefull'. */
+    private readonly filePrefix: string = 'pricefull',
   ) {}
 
   async getLatestFile(): Promise<ProviderFile | null> {
@@ -93,23 +95,25 @@ export class CerberusProvider {
       const matchesStore = (name: string) => !storeIdRe || storeIdRe.test(name);
       const isValidExt = (name: string) => /\.(xml|gz)$/i.test(name);
 
-      // Select PriceFull files only for this storeId
-      const priceFullFiles = allNames.filter(
-        (name) =>
-          name.toLowerCase().startsWith('pricefull') && isValidExt(name) && matchesStore(name),
+      // Select files matching the configured prefix (pricefull or promofull)
+      const prefix = this.filePrefix.toLowerCase();
+      const candidates = allNames.filter(
+        (name) => name.toLowerCase().startsWith(prefix) && isValidExt(name) && matchesStore(name),
       );
 
       console.log(
-        `[IMPORT] PriceFull candidates: ${priceFullFiles.length} storeId: ${this.storeId ?? 'any'}`,
+        `[IMPORT] ${this.filePrefix} candidates: ${candidates.length} storeId: ${this.storeId ?? 'any'}`,
       );
 
-      if (priceFullFiles.length === 0) {
-        console.log(`[IMPORT] no PriceFull file found for storeId: ${this.storeId ?? 'any'}`);
+      if (candidates.length === 0) {
+        console.log(
+          `[IMPORT] no ${this.filePrefix} file found for storeId: ${this.storeId ?? 'any'}`,
+        );
         return null;
       }
 
       // Pick newest by lex sort — timestamp is embedded in the filename
-      const latest = priceFullFiles.reduce((a, b) => (b.localeCompare(a) > 0 ? b : a));
+      const latest = candidates.reduce((a, b) => (b.localeCompare(a) > 0 ? b : a));
       console.log(`[IMPORT] selected file: ${latest} storeId: ${this.storeId ?? 'any'}`);
 
       // Download to memory
