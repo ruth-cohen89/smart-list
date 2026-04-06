@@ -1,8 +1,9 @@
 import type { ChainId } from '../../models/chain-product.model';
 
 /**
- * Configuration for importing price files from a single supermarket chain.
- * Add new chains by adding an entry here — no structural changes elsewhere required.
+ * Reference configuration for each supported chain.
+ * NOTE: This config is currently informational — each provider constructs its own
+ * request parameters internally. Keep values here in sync with the provider constants.
  */
 export interface ChainImportConfig {
   chainId: ChainId;
@@ -11,9 +12,9 @@ export interface ChainImportConfig {
   /**
    * Branch / store ID used to filter file names.
    * Israeli price file names embed the store ID: PriceFull{chainCode}-{storeId}-{ts}.xml.gz
-   * For Shufersal:  413 (online / representative branch)
-   * For Rami Levy:  039 (online branch)
-   * For Osher Ad:   013 (temporary representative branch for MVP — no explicit online store)
+   * For Shufersal:       413 (online / representative branch)
+   * For Rami Levy:       039 (online branch)
+   * For Machsanei Hashuk: 97 (online store)
    */
   targetStoreId: string;
   /** File-type prefix to import. Only PriceFull for MVP. */
@@ -23,8 +24,8 @@ export interface ChainImportConfig {
 export const CHAIN_IMPORT_CONFIGS: Record<ChainId, ChainImportConfig> = {
   shufersal: {
     chainId: 'shufersal',
-    // The storeId query param pre-filters the listing to this branch; filename filter is applied too.
-    listingUrl: 'https://prices.shufersal.co.il/FileObject/UpdateCategory?catID=5&storeId=413',
+    // catID=2 = PriceFull category on prices.shufersal.co.il (matches ShufersalProvider constant)
+    listingUrl: 'https://prices.shufersal.co.il/FileObject/UpdateCategory?catID=2&storeId=413',
     targetStoreId: '413',
     fileTypePrefix: 'PriceFull',
   },
