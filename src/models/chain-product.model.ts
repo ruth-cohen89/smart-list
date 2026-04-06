@@ -1,8 +1,8 @@
 // Supported supermarket chains.
 // Add new values here when onboarding additional chains — no other structural changes required.
-export type ChainId = 'shufersal' | 'rami-levy' | 'osher-ad';
+export type ChainId = 'shufersal' | 'rami-levy' | 'machsanei-hashuk';
 
-export const SUPPORTED_CHAINS: ChainId[] = ['shufersal', 'rami-levy', 'osher-ad'];
+export const SUPPORTED_CHAINS: ChainId[] = ['shufersal', 'rami-levy', 'machsanei-hashuk'];
 
 /**
  * A normalized product record sourced from a single supermarket chain.

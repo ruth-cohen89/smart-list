@@ -19,13 +19,68 @@ export interface FileEntry {
 
 const MAX_REDIRECTS = 5;
 /** ms before a single request is aborted — keeps import jobs from hanging */
-const REQUEST_TIMEOUT_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 3;
+/** ms base delay for exponential backoff between retries */
+const RETRY_BASE_DELAY_MS = 1_000;
+
+/** Error codes that are safe to retry (transient network failures). */
+const RETRYABLE_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'ENOTFOUND']);
+const RETRYABLE_MESSAGES = ['socket hang up', 'socket hangup'];
+
+function isRetryable(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as NodeJS.ErrnoException).code ?? '';
+  if (RETRYABLE_CODES.has(code)) return true;
+  return RETRYABLE_MESSAGES.some((m) => err.message.toLowerCase().includes(m));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Browser-like request headers — some servers reject requests without a User-Agent. */
+const BROWSER_HEADERS: Record<string, string> = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
+  Connection: 'keep-alive',
+};
 
 /**
  * GET a URL and return the raw response body as a Buffer.
  * Follows up to MAX_REDIRECTS redirects (301 / 302 / 307 / 308).
+ * Retries transient network errors with exponential backoff.
  */
-function httpGet(rawUrl: string, redirectsLeft = MAX_REDIRECTS): Promise<Buffer> {
+async function httpGet(rawUrl: string, redirectsLeft = MAX_REDIRECTS): Promise<Buffer> {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await httpGetOnce(rawUrl, redirectsLeft);
+    } catch (err) {
+      const retryable = isRetryable(err);
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      const message = err instanceof Error ? err.message : String(err);
+
+      if (!retryable || attempt === MAX_RETRIES) {
+        console.error(
+          `[HTTP] fetch failed — url: ${rawUrl} attempt: ${attempt}/${MAX_RETRIES} code: ${code} error: ${message}`,
+        );
+        throw err;
+      }
+
+      const backoff = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+      console.warn(
+        `[HTTP] retryable error on attempt ${attempt}/${MAX_RETRIES} — code: ${code} error: ${message} — retrying in ${backoff}ms`,
+      );
+      await delay(backoff);
+    }
+  }
+  // unreachable — loop always throws or returns
+  throw new Error(`httpGet: exhausted retries for ${rawUrl}`);
+}
+
+function httpGetOnce(rawUrl: string, redirectsLeft: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     let parsed: URL;
     try {
@@ -37,7 +92,7 @@ function httpGet(rawUrl: string, redirectsLeft = MAX_REDIRECTS): Promise<Buffer>
 
     const protocol = parsed.protocol === 'https:' ? https : http;
 
-    const req = protocol.get(rawUrl, (res) => {
+    const req = protocol.get(rawUrl, { headers: BROWSER_HEADERS }, (res) => {
       const { statusCode, headers } = res;
 
       // Follow redirects
@@ -51,7 +106,7 @@ function httpGet(rawUrl: string, redirectsLeft = MAX_REDIRECTS): Promise<Buffer>
           return;
         }
         const next = new URL(headers.location, rawUrl).href;
-        httpGet(next, redirectsLeft - 1).then(resolve, reject);
+        httpGetOnce(next, redirectsLeft - 1).then(resolve, reject);
         return;
       }
 

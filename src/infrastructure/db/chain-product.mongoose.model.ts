@@ -21,7 +21,7 @@ const ChainProductSchema = new Schema<IChainProductDocument>(
     chainId: {
       type: String,
       required: true,
-      enum: ['shufersal', 'rami-levy', 'osher-ad'],
+      enum: ['shufersal', 'rami-levy', 'machsanei-hashuk'],
     },
     externalId: { type: String, required: true, trim: true },
     barcode: { type: String, trim: true, sparse: true },

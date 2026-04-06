@@ -20,6 +20,7 @@
   "license": "MIT",
   "private": true,
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/bcrypt": "^6.0.0",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",
@@ -47,6 +48,7 @@
   },
   "dependencies": {
     "@google-cloud/vision": "^5.3.4",
+    "adm-zip": "^0.5.17",
     "basic-ftp": "^5.2.0",
     "bcrypt": "^6.0.0",
     "canvas": "^3.2.1",

@@ -34,11 +34,10 @@ export const CHAIN_IMPORT_CONFIGS: Record<ChainId, ChainImportConfig> = {
     targetStoreId: '039',
     fileTypePrefix: 'PriceFull',
   },
-  'osher-ad': {
-    chainId: 'osher-ad',
-    // targetStoreId is configurable here; change to the correct branch once confirmed.
-    listingUrl: 'https://osherad.co.il/prices/',
-    targetStoreId: '013',
+  'machsanei-hashuk': {
+    chainId: 'machsanei-hashuk',
+    listingUrl: 'https://laibcatalog.co.il/',
+    targetStoreId: '97',
     fileTypePrefix: 'PriceFull',
   },
 };

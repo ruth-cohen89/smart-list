@@ -12,21 +12,28 @@ export class ChainProductRepository {
    * Safe for concurrent import jobs — uses findOneAndUpdate with upsert.
    */
   async upsertProduct(data: UpsertChainProductData): Promise<ChainProduct> {
+    const setFields: Record<string, unknown> = {
+      originalName: data.originalName,
+      normalizedName: data.normalizedName,
+      price: data.price,
+      unit: data.unit,
+      quantity: data.quantity,
+      isActive: true,
+      lastSeenAt: data.lastSeenAt,
+    };
+
+    // Only set barcode when present; unset stale value when absent (e.g. produce items)
+    const update: Record<string, unknown> = { $set: setFields };
+    if (data.barcode) {
+      setFields.barcode = data.barcode;
+    } else {
+      update.$unset = { barcode: '' };
+    }
+
     const doc = await ChainProductMongoose.findOneAndUpdate(
       { chainId: data.chainId, externalId: data.externalId },
-      {
-        $set: {
-          barcode: data.barcode,
-          originalName: data.originalName,
-          normalizedName: data.normalizedName,
-          price: data.price,
-          unit: data.unit,
-          quantity: data.quantity,
-          isActive: true,
-          lastSeenAt: data.lastSeenAt,
-        },
-      },
-      { upsert: true, new: true },
+      update,
+      { upsert: true, new: true, runValidators: true },
     );
 
     if (!doc) throw new Error('upsertProduct: unexpected null document');
@@ -39,6 +46,12 @@ export class ChainProductRepository {
    * Returns the number of documents actually modified.
    */
   async markInactiveExcept(chainId: ChainId, seenExternalIds: string[]): Promise<number> {
+    if (seenExternalIds.length === 0) {
+      console.warn(
+        `[REPO] markInactiveExcept — skipped for chainId=${chainId}: seenExternalIds is empty`,
+      );
+      return 0;
+    }
     const result = await ChainProductMongoose.updateMany(
       { chainId, externalId: { $nin: seenExternalIds }, isActive: true },
       { $set: { isActive: false } },

@@ -12,7 +12,10 @@ const HOST = '0.0.0.0';
 
 const startServer = async () => {
   try {
+    console.log('Effective MONGO_URI:', process.env.MONGO_URI);
     await connectMongo();
+    console.log('Mongo DB:', mongoose.connection.name);
+    console.log('Mongo host:', mongoose.connection.host);
     const app = createApp();
 
     const server = app.listen(PORT, HOST, () => {

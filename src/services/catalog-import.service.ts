@@ -5,7 +5,7 @@ import { decompressIfNeeded } from '../infrastructure/catalog-import/chain-sourc
 import { parsePriceXml } from '../infrastructure/catalog-import/price-file.parser';
 import { normalizeName } from '../utils/normalize';
 import { ramiLevyProvider } from '../infrastructure/catalog-import/providers/rami-levy.provider';
-import { osherAdProvider } from '../infrastructure/catalog-import/providers/osher-ad.provider';
+import { machsaneiHashukProvider } from '../infrastructure/catalog-import/providers/machsanei-hashuk.provider';
 import { ShufersalProvider } from '../infrastructure/catalog-import/providers/shufersal.provider';
 
 // Result types
@@ -28,7 +28,7 @@ interface CatalogProvider {
 
 const PROVIDERS: Record<ChainId, CatalogProvider> = {
   'rami-levy': ramiLevyProvider,
-  'osher-ad': osherAdProvider,
+  'machsanei-hashuk': machsaneiHashukProvider,
   shufersal: new ShufersalProvider(),
 };
 
@@ -44,11 +44,28 @@ export class CatalogImportService {
     const file = await provider.getLatestFile();
 
     if (!file) {
-      return { chainId, success: false, upsertedCount: 0, skippedCount: 0, inactiveMarked: 0, sourceFile: null, error: `No PriceFull file found for chain: ${chainId}` };
+      return {
+        chainId,
+        success: false,
+        upsertedCount: 0,
+        skippedCount: 0,
+        inactiveMarked: 0,
+        sourceFile: null,
+        error: `No PriceFull file found for chain: ${chainId}`,
+      };
     }
 
     const xmlData = await decompressIfNeeded(file.rawData);
-    const products = parsePriceXml(xmlData);
+    const products = parsePriceXml(xmlData, file.filename);
+
+    console.log(`[IMPORT] chainId=${chainId} parsed=${products.length}`);
+    products
+      .slice(0, 3)
+      .forEach((p, i) =>
+        console.log(
+          `[IMPORT] sample[${i}] code=${p.itemCode} name="${p.itemName}" price=${p.itemPrice} barcode=${p.barcode ?? '(none)'}`,
+        ),
+      );
 
     // ── Validation + upsert loop ─────────────────────────────────────────────
     const now = new Date();
@@ -57,35 +74,58 @@ export class CatalogImportService {
     let skippedCount = 0;
 
     for (const p of products) {
-      // Lightweight validation — skip records that would fail DB constraints
-      if (!p.itemCode || !p.itemName || isNaN(p.itemPrice) || p.itemPrice < 0) {
+      try {
+        // Lightweight validation — skip records that would fail DB constraints
+        if (!p.itemCode || !p.itemName || isNaN(p.itemPrice) || p.itemPrice < 0) {
+          skippedCount++;
+          continue;
+        }
+
+        const normalizedName = normalizeName(p.itemName);
+        if (!normalizedName) {
+          console.warn(
+            `[IMPORT] skip — empty normalizedName chainId=${chainId} itemCode=${p.itemCode} name="${p.itemName}"`,
+          );
+          skippedCount++;
+          continue;
+        }
+
+        await this.chainProductRepo.upsertProduct({
+          chainId,
+          externalId: p.itemCode,
+          barcode: p.barcode,
+          originalName: p.itemName,
+          normalizedName,
+          price: p.itemPrice,
+          quantity: p.quantity,
+          unit: p.unitOfMeasure,
+          lastSeenAt: now,
+        });
+
+        seenExternalIds.push(p.itemCode);
+        upsertedCount++;
+      } catch (err) {
         skippedCount++;
-        continue;
+        console.error(
+          `[IMPORT] product error — chainId=${chainId} itemCode=${p.itemCode} name="${p.itemName}" barcode=${p.barcode ?? '(none)'} price=${p.itemPrice} error=${err instanceof Error ? err.message : String(err)}`,
+        );
       }
-
-      await this.chainProductRepo.upsertProduct({
-        chainId,
-        externalId: p.itemCode,
-        barcode: p.itemCode,
-        originalName: p.itemName,
-        normalizedName: normalizeName(p.itemName),
-        price: p.itemPrice,
-        quantity: p.quantity,
-        unit: p.unitOfMeasure,
-        lastSeenAt: now,
-      });
-
-      seenExternalIds.push(p.itemCode);
-      upsertedCount++;
     }
 
-    console.log(`[IMPORT] chainId=${chainId} parsed=${products.length} upserted=${upsertedCount} skipped=${skippedCount}`);
+    console.log(`[IMPORT] chainId=${chainId} upserted=${upsertedCount} skipped=${skippedCount}`);
 
     // ── Mark disappeared products inactive ───────────────────────────────────
     const inactiveMarked = await this.chainProductRepo.markInactiveExcept(chainId, seenExternalIds);
     console.log(`[IMPORT] chainId=${chainId} inactiveMarked=${inactiveMarked}`);
 
-    return { chainId, success: true, upsertedCount, skippedCount, inactiveMarked, sourceFile: file.filename };
+    return {
+      chainId,
+      success: true,
+      upsertedCount,
+      skippedCount,
+      inactiveMarked,
+      sourceFile: file.filename,
+    };
   }
 
   async importAllChains(): Promise<ChainImportResult[]> {

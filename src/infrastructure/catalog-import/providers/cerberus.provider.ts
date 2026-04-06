@@ -93,41 +93,24 @@ export class CerberusProvider {
       const matchesStore = (name: string) => !storeIdRe || storeIdRe.test(name);
       const isValidExt = (name: string) => /\.(xml|gz)$/i.test(name);
 
-      // 1. Try PriceFull files for this storeId
+      // Select PriceFull files only for this storeId
       const priceFullFiles = allNames.filter(
-        (name) => name.toLowerCase().startsWith('pricefull') && isValidExt(name) && matchesStore(name),
+        (name) =>
+          name.toLowerCase().startsWith('pricefull') && isValidExt(name) && matchesStore(name),
       );
-
-      // 2. Fall back to Price (non-Full) files for this storeId if PriceFull is empty
-      const priceFiles =
-        priceFullFiles.length === 0
-          ? allNames.filter(
-              (name) =>
-                name.toLowerCase().startsWith('price') &&
-                !name.toLowerCase().startsWith('pricefull') &&
-                isValidExt(name) &&
-                matchesStore(name),
-            )
-          : [];
-
-      const usedFallback = priceFullFiles.length === 0 && priceFiles.length > 0;
-      const candidates = priceFullFiles.length > 0 ? priceFullFiles : priceFiles;
-      const fileType = priceFullFiles.length > 0 ? 'PriceFull' : 'Price';
 
       console.log(
-        `[IMPORT] PriceFull candidates: ${priceFullFiles.length} Price candidates: ${priceFiles.length} storeId: ${this.storeId ?? 'any'}`,
+        `[IMPORT] PriceFull candidates: ${priceFullFiles.length} storeId: ${this.storeId ?? 'any'}`,
       );
 
-      if (candidates.length === 0) {
-        console.log(`[IMPORT] no Price or PriceFull file found for storeId: ${this.storeId ?? 'any'}`);
+      if (priceFullFiles.length === 0) {
+        console.log(`[IMPORT] no PriceFull file found for storeId: ${this.storeId ?? 'any'}`);
         return null;
       }
 
       // Pick newest by lex sort — timestamp is embedded in the filename
-      const latest = candidates.reduce((a, b) => (b.localeCompare(a) > 0 ? b : a));
-      console.log(
-        `[IMPORT] selected file: ${latest} type: ${fileType} storeId: ${this.storeId ?? 'any'} fallback: ${usedFallback}`,
-      );
+      const latest = priceFullFiles.reduce((a, b) => (b.localeCompare(a) > 0 ? b : a));
+      console.log(`[IMPORT] selected file: ${latest} storeId: ${this.storeId ?? 'any'}`);
 
       // Download to memory
       console.log(`[IMPORT] download start — file: ${latest}`);
