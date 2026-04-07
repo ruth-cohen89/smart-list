@@ -7,10 +7,6 @@ import { normalizeName } from '../utils/normalize';
 import { ramiLevyProvider } from '../infrastructure/catalog-import/providers/rami-levy.provider';
 import { machsaneiHashukProvider } from '../infrastructure/catalog-import/providers/machsanei-hashuk.provider';
 import { ShufersalProvider } from '../infrastructure/catalog-import/providers/shufersal.provider';
-import {
-  PromoImportService,
-  type ChainPromoImportResult,
-} from './promo-import.service';
 
 export interface ChainImportResult {
   chainId: ChainId;
@@ -19,7 +15,6 @@ export interface ChainImportResult {
   skippedCount: number;
   inactiveMarked: number;
   sourceFile: string | null;
-  promotionImport?: ChainPromoImportResult;
   error?: string;
 }
 
@@ -34,10 +29,7 @@ const PROVIDERS: Record<ChainId, CatalogProvider> = {
 };
 
 export class CatalogImportService {
-  constructor(
-    private readonly chainProductRepo: ChainProductRepository,
-    private readonly promoImportService?: PromoImportService,
-  ) {}
+  constructor(private readonly chainProductRepo: ChainProductRepository) {}
 
   async importChain(chainId: ChainId): Promise<ChainImportResult> {
     console.log(`[IMPORT] chainId=${chainId} starting price import`);
@@ -106,27 +98,6 @@ export class CatalogImportService {
     }
 
     const inactiveMarked = await this.chainProductRepo.markInactiveExcept(chainId, seenExternalIds);
-    let promotionImport: ChainPromoImportResult | undefined;
-
-    if (this.promoImportService) {
-      try {
-        promotionImport = await this.promoImportService.importChain(chainId);
-      } catch (error) {
-        console.error(
-          `[IMPORT] promotion import failed after price import chainId=${chainId} error=${error instanceof Error ? error.message : String(error)}`,
-        );
-        promotionImport = {
-          chainId,
-          success: false,
-          upsertedCount: 0,
-          skippedCount: 0,
-          inactiveMarked: 0,
-          productsUpdated: 0,
-          sourceFile: null,
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
-    }
 
     return {
       chainId,
@@ -135,7 +106,6 @@ export class CatalogImportService {
       skippedCount,
       inactiveMarked,
       sourceFile: file.filename,
-      promotionImport,
     };
   }
 
