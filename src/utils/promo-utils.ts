@@ -22,9 +22,7 @@ function getFormatter(timeZone: string): Intl.DateTimeFormat {
 function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
   const parts = getFormatter(timeZone).formatToParts(date);
   const values = Object.fromEntries(
-    parts
-      .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, Number(part.value)]),
+    parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]),
   );
 
   const utcValue = Date.UTC(
@@ -182,9 +180,7 @@ export function classifyPromotion(promotion: {
     promotion.discountRate > 0 &&
     promotion.discountRate <= 100
   ) {
-    return promotion.discountType === 1
-      ? PromotionKind.AMOUNT_OFF
-      : PromotionKind.PERCENT_DISCOUNT;
+    return promotion.discountType === 1 ? PromotionKind.AMOUNT_OFF : PromotionKind.PERCENT_DISCOUNT;
   }
 
   if (promotion.rewardType === 3) {

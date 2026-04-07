@@ -4,7 +4,7 @@ import { downloadFile } from '../chain-source.client';
 
 const BASE_URL = 'https://prices.shufersal.co.il';
 const DEFAULT_PRICE_FULL_CATEGORY_ID = 2;
-const DEFAULT_PROMO_FULL_CATEGORY_ID = 3;
+const DEFAULT_PROMO_FULL_CATEGORY_ID = 4;
 const DEFAULT_STORE_ID = '413';
 
 interface FileEntry {
