@@ -92,34 +92,56 @@ export class ChainProductRepository {
   ): Promise<number> {
     const itemCodes = [...promotionsByItemCode.keys()];
 
-    await ChainProductMongoose.updateMany(
-      { chainId },
+    console.log(
+      `[REPO] mergePromotions chainId=${chainId} itemCodes=${itemCodes.length} resetStart`,
+    );
+    const resetResult = await ChainProductMongoose.updateMany(
+      { chainId, hasActivePromotions: true },
       { $set: { promotions: [], hasActivePromotions: false, lastPromotionSyncAt: syncAt } },
+    );
+    console.log(
+      `[REPO] mergePromotions chainId=${chainId} resetDone modified=${resetResult.modifiedCount}`,
     );
 
     if (itemCodes.length === 0) {
-      console.log(`[REPO] mergePromotions chainId=${chainId} no active promotion item codes to merge`);
+      console.log(
+        `[REPO] mergePromotions chainId=${chainId} no active promotion item codes to merge`,
+      );
       return 0;
     }
 
-    const candidateDocs = await ChainProductMongoose.find(
-      {
-        chainId,
-        $or: [{ externalId: { $in: itemCodes } }, { barcode: { $in: itemCodes } }],
-      },
-      { _id: 1, externalId: 1, barcode: 1 },
-    ).lean();
+    // Query candidates in chunks to avoid huge $in arrays
+    console.log(`[REPO] mergePromotions chainId=${chainId} candidateQueryStart`);
+    const QUERY_CHUNK = 5000;
+    const allCandidates: PromotionMergeProduct[] = [];
 
-    const mergePlan = assignPromotionsToProducts(
-      candidateDocs.map(
-        (doc): PromotionMergeProduct => ({
+    for (let i = 0; i < itemCodes.length; i += QUERY_CHUNK) {
+      const chunk = itemCodes.slice(i, i + QUERY_CHUNK);
+      const docs = await ChainProductMongoose.find(
+        {
+          chainId,
+          $or: [{ externalId: { $in: chunk } }, { barcode: { $in: chunk } }],
+        },
+        { _id: 1, externalId: 1, barcode: 1 },
+      ).lean();
+
+      for (const doc of docs) {
+        allCandidates.push({
           id: String(doc._id),
           externalId: doc.externalId,
           barcode: doc.barcode,
-        }),
-      ),
-      promotionsByItemCode,
+        });
+      }
+
+      console.log(
+        `[REPO] mergePromotions chainId=${chainId} candidateChunk ${Math.floor(i / QUERY_CHUNK) + 1} found=${docs.length}`,
+      );
+    }
+    console.log(
+      `[REPO] mergePromotions chainId=${chainId} candidateQueryDone total=${allCandidates.length}`,
     );
+
+    const mergePlan = assignPromotionsToProducts(allCandidates, promotionsByItemCode);
 
     if (mergePlan.assignments.length === 0) {
       console.log(
@@ -128,24 +150,35 @@ export class ChainProductRepository {
       return 0;
     }
 
-    await ChainProductMongoose.bulkWrite(
-      mergePlan.assignments.map((assignment) => ({
-        updateOne: {
-          filter: { _id: assignment.productId },
-          update: {
-            $set: {
-              promotions: assignment.promotions,
-              hasActivePromotions: assignment.promotions.length > 0,
-              lastPromotionSyncAt: syncAt,
+    // bulkWrite in chunks, unordered for parallelism
+    console.log(
+      `[REPO] mergePromotions chainId=${chainId} bulkWriteStart assignments=${mergePlan.assignments.length}`,
+    );
+    const WRITE_CHUNK = 500;
+    for (let i = 0; i < mergePlan.assignments.length; i += WRITE_CHUNK) {
+      const chunk = mergePlan.assignments.slice(i, i + WRITE_CHUNK);
+      await ChainProductMongoose.bulkWrite(
+        chunk.map((assignment) => ({
+          updateOne: {
+            filter: { _id: assignment.productId },
+            update: {
+              $set: {
+                promotions: assignment.promotions,
+                hasActivePromotions: assignment.promotions.length > 0,
+                lastPromotionSyncAt: syncAt,
+              },
             },
           },
-        },
-      })),
-      { ordered: true },
-    );
+        })),
+        { ordered: false },
+      );
+      console.log(
+        `[REPO] mergePromotions chainId=${chainId} bulkWriteChunk ${Math.floor(i / WRITE_CHUNK) + 1}/${Math.ceil(mergePlan.assignments.length / WRITE_CHUNK)} written=${chunk.length}`,
+      );
+    }
 
     console.log(
-      `[REPO] mergePromotions chainId=${chainId} matchedProducts=${mergePlan.assignments.length} matchedItemCodes=${mergePlan.matchedItemCodes.length} unmatchedItemCodes=${mergePlan.unmatchedItemCodes.length}`,
+      `[REPO] mergePromotions chainId=${chainId} done matchedProducts=${mergePlan.assignments.length} matchedItemCodes=${mergePlan.matchedItemCodes.length} unmatchedItemCodes=${mergePlan.unmatchedItemCodes.length}`,
     );
 
     return mergePlan.assignments.length;

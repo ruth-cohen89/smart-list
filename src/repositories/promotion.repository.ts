@@ -4,49 +4,55 @@ import type { Promotion, UpsertPromoData } from '../models/promotion.model';
 import type { ChainId } from '../models/chain-product.model';
 
 export class PromotionRepository {
-  async upsertPromo(data: UpsertPromoData): Promise<Promotion> {
-    const itemCodes = [...new Set(data.items.map((item) => item.itemCode))];
+  async bulkUpsertPromos(dataList: UpsertPromoData[]): Promise<number> {
+    if (dataList.length === 0) return 0;
 
-    const doc = await PromotionMongoose.findOneAndUpdate(
-      { chainId: data.chainId, storeId: data.storeId, promotionId: data.promotionId },
-      {
-        $set: {
-          description: data.description,
-          startAt: data.startAt,
-          endAt: data.endAt,
-          rewardType: data.rewardType,
-          discountType: data.discountType,
-          discountRate: data.discountRate,
-          minQty: data.minQty,
-          maxQty: data.maxQty,
-          discountedPrice: data.discountedPrice,
-          minItemsOffered: data.minItemsOffered,
-          items: data.items,
-          parsedPromotionKind: data.parsedPromotionKind,
-          rawPayload: data.rawPayload,
-          promotionUpdateAt: data.promotionUpdateAt,
-          discountedPricePerMida: data.discountedPricePerMida,
-          allowMultipleDiscounts: data.allowMultipleDiscounts,
-          minPurchaseAmount: data.minPurchaseAmount,
-          isWeightedPromo: data.isWeightedPromo,
-          clubId: data.clubId,
-          remarks: data.remarks,
-          isGift: data.isGift,
-          isCoupon: data.isCoupon,
-          isTotal: data.isTotal,
-          itemCodes,
-          isActive: true,
-          lastSeenAt: data.lastSeenAt,
+    const ops = dataList.map((data) => {
+      const itemCodes = [...new Set(data.items.map((item) => item.itemCode))];
+      return {
+        updateOne: {
+          filter: {
+            chainId: data.chainId,
+            storeId: data.storeId,
+            promotionId: data.promotionId,
+          },
+          update: {
+            $set: {
+              description: data.description,
+              startAt: data.startAt,
+              endAt: data.endAt,
+              rewardType: data.rewardType,
+              discountType: data.discountType,
+              discountRate: data.discountRate,
+              minQty: data.minQty,
+              maxQty: data.maxQty,
+              discountedPrice: data.discountedPrice,
+              minItemsOffered: data.minItemsOffered,
+              items: data.items,
+              parsedPromotionKind: data.parsedPromotionKind,
+              rawPayload: data.rawPayload,
+              promotionUpdateAt: data.promotionUpdateAt,
+              discountedPricePerMida: data.discountedPricePerMida,
+              allowMultipleDiscounts: data.allowMultipleDiscounts,
+              minPurchaseAmount: data.minPurchaseAmount,
+              isWeightedPromo: data.isWeightedPromo,
+              clubId: data.clubId,
+              remarks: data.remarks,
+              isGift: data.isGift,
+              isCoupon: data.isCoupon,
+              isTotal: data.isTotal,
+              itemCodes,
+              isActive: true,
+              lastSeenAt: data.lastSeenAt,
+            },
+          },
+          upsert: true,
         },
-      },
-      { upsert: true, new: true, runValidators: true },
-    );
+      };
+    });
 
-    if (!doc) {
-      throw new Error('upsertPromo: unexpected null document');
-    }
-
-    return mapPromotion(doc);
+    const result = await PromotionMongoose.bulkWrite(ops, { ordered: false });
+    return (result.upsertedCount ?? 0) + (result.modifiedCount ?? 0);
   }
 
   async markInactiveExcept(

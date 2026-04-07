@@ -3,7 +3,10 @@ import { ChainProductRepository } from '../repositories/chain-product.repository
 import { SUPPORTED_CHAINS } from '../models/chain-product.model';
 import type { ChainId, EmbeddedPromotion } from '../models/chain-product.model';
 import { PromotionKind, type Promotion } from '../models/promotion.model';
-import type { ParsedPromotionFile, ParsedPromotionRecord } from '../infrastructure/catalog-import/promo-file.parser';
+import type {
+  ParsedPromotionFile,
+  ParsedPromotionRecord,
+} from '../infrastructure/catalog-import/promo-file.parser';
 import { parseRamiLevyPromotionFile } from '../infrastructure/catalog-import/rami-levy.promo.parser';
 import { parseShufersalPromotionFile } from '../infrastructure/catalog-import/shufersal.promo.parser';
 import { parseMahsaneiHashukPromotionFile } from '../infrastructure/catalog-import/mahsanei-hashuk.promo.parser';
@@ -119,21 +122,21 @@ export class PromoImportService {
 
     const now = new Date();
     const seenPromotionIds: string[] = [];
-    let upsertedCount = 0;
+    const batch: import('../models/promotion.model').UpsertPromoData[] = [];
     let skippedCount = 0;
+
+    console.log(`[PROMO_IMPORT] chainId=${chainId} preparing upsert batch...`);
 
     for (const record of parsedFile.promotions) {
       if (shouldSkipParsedPromotion(record)) {
         skippedCount++;
-        console.log(
-          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${record.promotionId || '(missing)'} reason=missing-id-or-items`,
-        );
         continue;
       }
 
       const startAt = parseDate(record.startDate, record.startHour, 'start');
       const endAt = parseDate(record.endDate, record.endHour, 'end');
-      const promotionUpdateAt = parseDate(record.promotionUpdateDate, undefined, 'end') ?? undefined;
+      const promotionUpdateAt =
+        parseDate(record.promotionUpdateDate, undefined, 'end') ?? undefined;
 
       const parsedPromotionKind = classifyPromotion({
         discountedPrice: record.discountedPrice,
@@ -146,60 +149,76 @@ export class PromoImportService {
         items: record.items,
       });
 
-      try {
-        await this.promoRepo.upsertPromo({
-          chainId,
-          storeId: parsedFile.storeId,
-          promotionId: record.promotionId,
-          description: record.description,
-          startAt,
-          endAt,
-          rewardType: record.rewardType,
-          discountType: record.discountType,
-          discountRate: record.discountRate,
-          minQty: record.minQty,
-          maxQty: record.maxQty,
-          discountedPrice: record.discountedPrice,
-          minItemsOffered: record.minItemsOffered,
-          items: record.items,
-          parsedPromotionKind,
-          rawPayload: record.rawPayload,
-          promotionUpdateAt,
-          discountedPricePerMida: record.discountedPricePerMida,
-          allowMultipleDiscounts: record.allowMultipleDiscounts,
-          minPurchaseAmount: record.minPurchaseAmount,
-          isWeightedPromo: record.isWeightedPromo,
-          clubId: record.clubId,
-          remarks: record.remarks,
-          isGift: record.isGift,
-          isCoupon: record.isCoupon,
-          isTotal: record.isTotal,
-          lastSeenAt: now,
-        });
+      batch.push({
+        chainId,
+        storeId: parsedFile.storeId,
+        promotionId: record.promotionId,
+        description: record.description,
+        startAt,
+        endAt,
+        rewardType: record.rewardType,
+        discountType: record.discountType,
+        discountRate: record.discountRate,
+        minQty: record.minQty,
+        maxQty: record.maxQty,
+        discountedPrice: record.discountedPrice,
+        minItemsOffered: record.minItemsOffered,
+        items: record.items,
+        parsedPromotionKind,
+        rawPayload: record.rawPayload,
+        promotionUpdateAt,
+        discountedPricePerMida: record.discountedPricePerMida,
+        allowMultipleDiscounts: record.allowMultipleDiscounts,
+        minPurchaseAmount: record.minPurchaseAmount,
+        isWeightedPromo: record.isWeightedPromo,
+        clubId: record.clubId,
+        remarks: record.remarks,
+        isGift: record.isGift,
+        isCoupon: record.isCoupon,
+        isTotal: record.isTotal,
+        lastSeenAt: now,
+      });
 
-        seenPromotionIds.push(record.promotionId);
-        upsertedCount++;
-      } catch (error) {
-        skippedCount++;
-        console.error(
-          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${record.promotionId} error=${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      seenPromotionIds.push(record.promotionId);
+    }
+
+    console.log(
+      `[PROMO_IMPORT] chainId=${chainId} batchSize=${batch.length} skipped=${skippedCount}`,
+    );
+
+    // Bulk upsert in chunks of 500
+    const CHUNK_SIZE = 500;
+    let upsertedCount = 0;
+    for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
+      const chunk = batch.slice(i, i + CHUNK_SIZE);
+      const count = await this.promoRepo.bulkUpsertPromos(chunk);
+      upsertedCount += count;
+      console.log(
+        `[PROMO_IMPORT] chainId=${chainId} upserted chunk ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(batch.length / CHUNK_SIZE)} (${count} ops)`,
+      );
     }
 
     console.log(
       `[PROMO_IMPORT] chainId=${chainId} upsertedPromotions=${upsertedCount} skippedPromotions=${skippedCount}`,
     );
 
+    console.log(`[PROMO_IMPORT] chainId=${chainId} markInactiveExcept starting...`);
     const inactiveMarked = await this.promoRepo.markInactiveExcept(
       chainId,
       parsedFile.storeId,
       seenPromotionIds,
     );
+    console.log(
+      `[PROMO_IMPORT] chainId=${chainId} markInactiveExcept done inactiveMarked=${inactiveMarked}`,
+    );
 
     let productsUpdated = 0;
     try {
+      console.log(`[PROMO_IMPORT] chainId=${chainId} mergePromotionsToProducts starting...`);
       productsUpdated = await this.mergePromotionsToProducts(chainId, now);
+      console.log(
+        `[PROMO_IMPORT] chainId=${chainId} mergePromotionsToProducts done productsUpdated=${productsUpdated}`,
+      );
     } catch (error) {
       console.error(
         `[PROMO_IMPORT] merge failed chainId=${chainId} error=${error instanceof Error ? error.message : String(error)}`,
@@ -296,9 +315,7 @@ export class PromoImportService {
       now,
     );
 
-    console.log(
-      `[PROMO_IMPORT] chainId=${chainId} matchedPromotionsToProducts=${productsUpdated}`,
-    );
+    console.log(`[PROMO_IMPORT] chainId=${chainId} matchedPromotionsToProducts=${productsUpdated}`);
 
     return productsUpdated;
   }
