@@ -3,10 +3,12 @@ import type { Request, Response, NextFunction } from 'express';
 import { PromoImportController } from '../controllers/promo-import.controller';
 import { PromoImportService } from '../services/promo-import.service';
 import { PromotionRepository } from '../repositories/promotion.repository';
+import { ChainProductRepository } from '../repositories/chain-product.repository';
 import { AppError } from '../errors/app-error';
 
 const promoRepo = new PromotionRepository();
-const service = new PromoImportService(promoRepo);
+const chainProductRepo = new ChainProductRepository();
+const service = new PromoImportService(promoRepo, chainProductRepo);
 const controller = new PromoImportController(service);
 
 // ── Import secret guard (same as catalog-import) ──────────────────────────────

@@ -1,16 +1,19 @@
 import ChainProductMongoose from '../infrastructure/db/chain-product.mongoose.model';
 import { mapChainProduct } from '../mappers/chain-product.mapper';
-import type { ChainProduct, ChainId, UpsertChainProductData } from '../models/chain-product.model';
+import {
+  assignPromotionsToProducts,
+  type PromotionMergeProduct,
+} from '../services/promotion-merge.service';
+import type {
+  ChainProduct,
+  ChainId,
+  UpsertChainProductData,
+  EmbeddedPromotion,
+} from '../models/chain-product.model';
 
-// Maximum candidates returned for name matching — keeps in-memory scoring fast
 const NAME_CANDIDATE_LIMIT = 30;
 
 export class ChainProductRepository {
-  /**
-   * Insert or update a product identified by { chainId, externalId }.
-   * Also marks the product active and updates lastSeenAt.
-   * Safe for concurrent import jobs — uses findOneAndUpdate with upsert.
-   */
   async upsertProduct(data: UpsertChainProductData): Promise<ChainProduct> {
     const setFields: Record<string, unknown> = {
       originalName: data.originalName,
@@ -22,7 +25,6 @@ export class ChainProductRepository {
       lastSeenAt: data.lastSeenAt,
     };
 
-    // Only set barcode when present; unset stale value when absent (e.g. produce items)
     const update: Record<string, unknown> = { $set: setFields };
     if (data.barcode) {
       setFields.barcode = data.barcode;
@@ -36,46 +38,41 @@ export class ChainProductRepository {
       { upsert: true, new: true, runValidators: true },
     );
 
-    if (!doc) throw new Error('upsertProduct: unexpected null document');
+    if (!doc) {
+      throw new Error('upsertProduct: unexpected null document');
+    }
+
     return mapChainProduct(doc);
   }
 
-  /**
-   * Mark all active products for a chain as inactive EXCEPT those in seenExternalIds.
-   * Called after an import loop to deactivate products no longer in the latest file.
-   * Returns the number of documents actually modified.
-   */
   async markInactiveExcept(chainId: ChainId, seenExternalIds: string[]): Promise<number> {
     if (seenExternalIds.length === 0) {
       console.warn(
-        `[REPO] markInactiveExcept — skipped for chainId=${chainId}: seenExternalIds is empty`,
+        `[REPO] markInactiveExcept skipped for chainId=${chainId} because seenExternalIds is empty`,
       );
       return 0;
     }
+
     const result = await ChainProductMongoose.updateMany(
       { chainId, externalId: { $nin: seenExternalIds }, isActive: true },
       { $set: { isActive: false } },
     );
+
     return result.modifiedCount;
   }
 
-  /**
-   * Find active products matching a barcode, optionally restricted to one chain.
-   */
   async findByBarcode(barcode: string, chainId?: ChainId): Promise<ChainProduct[]> {
     const filter: Record<string, unknown> = { barcode, isActive: true };
-    if (chainId) filter.chainId = chainId;
+    if (chainId) {
+      filter.chainId = chainId;
+    }
 
     const docs = await ChainProductMongoose.find(filter).lean();
     return docs.map(mapChainProduct);
   }
 
-  /**
-   * Fetch candidate products for name-based matching.
-   * Returns up to NAME_CANDIDATE_LIMIT results; the caller scores and ranks them.
-   */
   async findCandidatesByName(normalizedName: string, chainId: ChainId): Promise<ChainProduct[]> {
-    const firstToken = normalizedName.split(' ').find((t) => t.length >= 2) ?? normalizedName;
+    const firstToken = normalizedName.split(' ').find((token) => token.length >= 2) ?? normalizedName;
 
     const docs = await ChainProductMongoose.find({
       chainId,
@@ -88,10 +85,72 @@ export class ChainProductRepository {
     return docs.map(mapChainProduct);
   }
 
-  /**
-   * DEV ONLY — print a quick summary of what is stored for a chain.
-   * Call via verifyImport() on the service; never called in production flows.
-   */
+  async mergePromotions(
+    chainId: ChainId,
+    promotionsByItemCode: Map<string, EmbeddedPromotion[]>,
+    syncAt: Date,
+  ): Promise<number> {
+    const itemCodes = [...promotionsByItemCode.keys()];
+
+    await ChainProductMongoose.updateMany(
+      { chainId },
+      { $set: { promotions: [], hasActivePromotions: false, lastPromotionSyncAt: syncAt } },
+    );
+
+    if (itemCodes.length === 0) {
+      console.log(`[REPO] mergePromotions chainId=${chainId} no active promotion item codes to merge`);
+      return 0;
+    }
+
+    const candidateDocs = await ChainProductMongoose.find(
+      {
+        chainId,
+        $or: [{ externalId: { $in: itemCodes } }, { barcode: { $in: itemCodes } }],
+      },
+      { _id: 1, externalId: 1, barcode: 1 },
+    ).lean();
+
+    const mergePlan = assignPromotionsToProducts(
+      candidateDocs.map(
+        (doc): PromotionMergeProduct => ({
+          id: String(doc._id),
+          externalId: doc.externalId,
+          barcode: doc.barcode,
+        }),
+      ),
+      promotionsByItemCode,
+    );
+
+    if (mergePlan.assignments.length === 0) {
+      console.log(
+        `[REPO] mergePromotions chainId=${chainId} matchedProducts=0 unmatchedItemCodes=${mergePlan.unmatchedItemCodes.length}`,
+      );
+      return 0;
+    }
+
+    await ChainProductMongoose.bulkWrite(
+      mergePlan.assignments.map((assignment) => ({
+        updateOne: {
+          filter: { _id: assignment.productId },
+          update: {
+            $set: {
+              promotions: assignment.promotions,
+              hasActivePromotions: assignment.promotions.length > 0,
+              lastPromotionSyncAt: syncAt,
+            },
+          },
+        },
+      })),
+      { ordered: true },
+    );
+
+    console.log(
+      `[REPO] mergePromotions chainId=${chainId} matchedProducts=${mergePlan.assignments.length} matchedItemCodes=${mergePlan.matchedItemCodes.length} unmatchedItemCodes=${mergePlan.unmatchedItemCodes.length}`,
+    );
+
+    return mergePlan.assignments.length;
+  }
+
   async verifyImport(chainId: ChainId): Promise<void> {
     const total = await ChainProductMongoose.countDocuments({ chainId });
     const active = await ChainProductMongoose.countDocuments({ chainId, isActive: true });
@@ -99,9 +158,9 @@ export class ChainProductRepository {
     const samples = await ChainProductMongoose.find({ chainId }).limit(3).lean();
 
     console.log(`[VERIFY] chainId=${chainId} total=${total} active=${active} inactive=${inactive}`);
-    samples.forEach((s, i) =>
+    samples.forEach((sample, index) =>
       console.log(
-        `[VERIFY] sample[${i}] externalId=${s.externalId} name="${s.originalName}" price=${s.price} isActive=${s.isActive}`,
+        `[VERIFY] sample[${index}] externalId=${sample.externalId} name="${sample.originalName}" price=${sample.price} isActive=${sample.isActive} promos=${sample.promotions?.length ?? 0}`,
       ),
     );
   }

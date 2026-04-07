@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import type { ChainId } from '../../models/chain-product.model';
+import { PromotionKind } from '../../models/promotion.model';
 
 export interface IChainProductDocument extends Document {
   chainId: ChainId;
@@ -12,9 +13,87 @@ export interface IChainProductDocument extends Document {
   quantity?: number;
   isActive: boolean;
   lastSeenAt: Date;
+  promotions: Array<{
+    chainId: ChainId;
+    promotionId: string;
+    description: string;
+    startAt: Date | null;
+    endAt: Date | null;
+    rewardType?: number;
+    discountType?: number;
+    discountRate?: number;
+    minQty?: number;
+    maxQty?: number;
+    discountedPrice?: number;
+    minItemsOffered?: number;
+    items: Array<{ itemCode: string; itemType?: number; isGiftItem?: boolean }>;
+    parsedPromotionKind: PromotionKind;
+    rawPayload: Record<string, unknown>;
+    promotionUpdateAt?: Date;
+    discountedPricePerMida?: number;
+    allowMultipleDiscounts?: boolean;
+    minPurchaseAmount?: number;
+    isWeightedPromo?: boolean;
+    clubId?: string;
+    remarks?: string;
+    isGift?: boolean;
+    isCoupon?: boolean;
+    isTotal?: boolean;
+  }>;
+  hasActivePromotions: boolean;
+  lastPromotionSyncAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
+
+const PromotionItemSchema = new Schema(
+  {
+    itemCode: { type: String, required: true, trim: true },
+    itemType: { type: Number },
+    isGiftItem: { type: Boolean },
+  },
+  { _id: false },
+);
+
+const EmbeddedPromotionSchema = new Schema(
+  {
+    chainId: {
+      type: String,
+      required: true,
+      enum: ['shufersal', 'rami-levy', 'machsanei-hashuk'],
+    },
+    promotionId: { type: String, required: true, trim: true },
+    description: { type: String, required: true, trim: true },
+    startAt: { type: Date, default: null },
+    endAt: { type: Date, default: null },
+    rewardType: { type: Number },
+    discountType: { type: Number },
+    discountRate: { type: Number, min: 0 },
+    minQty: { type: Number, min: 0 },
+    maxQty: { type: Number, min: 0 },
+    discountedPrice: { type: Number, min: 0 },
+    minItemsOffered: { type: Number, min: 0 },
+    items: { type: [PromotionItemSchema], default: [] },
+    parsedPromotionKind: {
+      type: String,
+      required: true,
+      enum: Object.values(PromotionKind),
+      default: PromotionKind.UNKNOWN,
+    },
+    rawPayload: { type: Schema.Types.Mixed, required: true },
+    promotionUpdateAt: { type: Date },
+    discountedPricePerMida: { type: Number, min: 0 },
+    allowMultipleDiscounts: { type: Boolean },
+    minPurchaseAmount: { type: Number, min: 0 },
+    isWeightedPromo: { type: Boolean },
+    clubId: { type: String, trim: true },
+    remarks: { type: String, trim: true },
+    isGift: { type: Boolean },
+    isCoupon: { type: Boolean },
+    isTotal: { type: Boolean },
+  },
+  { _id: false },
+);
 
 const ChainProductSchema = new Schema<IChainProductDocument>(
   {
@@ -32,27 +111,17 @@ const ChainProductSchema = new Schema<IChainProductDocument>(
     quantity: { type: Number, min: 0 },
     isActive: { type: Boolean, required: true, default: true },
     lastSeenAt: { type: Date, required: true },
+    promotions: { type: [EmbeddedPromotionSchema], default: [] },
+    hasActivePromotions: { type: Boolean, required: true, default: false },
+    lastPromotionSyncAt: { type: Date },
   },
   { timestamps: true },
 );
 
-// Upsert key for catalog import: unique product per chain.
-// chainId first — all import writes are scoped to one chain.
 ChainProductSchema.index({ chainId: 1, externalId: 1 }, { unique: true });
-
-// Within-chain barcode match (primary match path).
-// chainId first because every query is already scoped to a chain.
-// isActive last — low cardinality, but narrows the result set cheaply after the equality hits.
-// sparse: barcode is optional, omit null entries from the index.
 ChainProductSchema.index({ chainId: 1, barcode: 1, isActive: 1 }, { sparse: true });
-
-// Within-chain name search (fallback match path, regex on normalizedName).
-// chainId first to restrict the scan to one chain before the regex runs.
 ChainProductSchema.index({ chainId: 1, normalizedName: 1, isActive: 1 });
-
-// Cross-chain barcode lookup for price comparison (no chainId filter).
-// barcode first — this is the lookup key across all chains.
-// sparse: omit documents where barcode is absent.
 ChainProductSchema.index({ barcode: 1, isActive: 1 }, { sparse: true });
+ChainProductSchema.index({ chainId: 1, hasActivePromotions: 1, isActive: 1 });
 
 export default mongoose.model<IChainProductDocument>('ChainProduct', ChainProductSchema);

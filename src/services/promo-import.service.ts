@@ -1,13 +1,21 @@
 import { PromotionRepository } from '../repositories/promotion.repository';
+import { ChainProductRepository } from '../repositories/chain-product.repository';
 import { SUPPORTED_CHAINS } from '../models/chain-product.model';
-import type { ChainId } from '../models/chain-product.model';
-import { decompressIfNeeded } from '../infrastructure/catalog-import/chain-source.client';
-import { parsePromoXml } from '../infrastructure/catalog-import/promo-file.parser';
+import type { ChainId, EmbeddedPromotion } from '../models/chain-product.model';
+import { PromotionKind, type Promotion } from '../models/promotion.model';
+import type { ParsedPromotionFile, ParsedPromotionRecord } from '../infrastructure/catalog-import/promo-file.parser';
+import { parseRamiLevyPromotionFile } from '../infrastructure/catalog-import/rami-levy.promo.parser';
+import { parseShufersalPromotionFile } from '../infrastructure/catalog-import/shufersal.promo.parser';
+import { parseMahsaneiHashukPromotionFile } from '../infrastructure/catalog-import/mahsanei-hashuk.promo.parser';
 import { ramiLevyPromoProvider } from '../infrastructure/catalog-import/providers/rami-levy-promo.provider';
 import { machsaneiHashukPromoProvider } from '../infrastructure/catalog-import/providers/machsanei-hashuk.provider';
-import { ShufersalPromoProvider } from '../infrastructure/catalog-import/providers/shufersal-promo.provider';
-
-// Result types
+import { shufersalPromoProvider } from '../infrastructure/catalog-import/providers/shufersal-promo.provider';
+import {
+  classifyPromotion,
+  hasUsablePromotionWindow,
+  isPromotionActive,
+  parseDate,
+} from '../utils/promo-utils';
 
 export interface ChainPromoImportResult {
   chainId: ChainId;
@@ -15,11 +23,10 @@ export interface ChainPromoImportResult {
   upsertedCount: number;
   skippedCount: number;
   inactiveMarked: number;
+  productsUpdated: number;
   sourceFile: string | null;
   error?: string;
 }
-
-// ─── Provider registry ────────────────────────────────────────────────────────
 
 interface PromoProvider {
   getLatestFile(): Promise<{ filename: string; rawData: Buffer } | null>;
@@ -28,13 +35,63 @@ interface PromoProvider {
 const PROMO_PROVIDERS: Record<ChainId, PromoProvider> = {
   'rami-levy': ramiLevyPromoProvider,
   'machsanei-hashuk': machsaneiHashukPromoProvider,
-  shufersal: new ShufersalPromoProvider(),
+  shufersal: shufersalPromoProvider,
 };
 
-// ─── Service ──────────────────────────────────────────────────────────────────
+function parsePromotionFile(
+  chainId: ChainId,
+  xmlData: Buffer | string,
+  filename: string,
+): ParsedPromotionFile {
+  switch (chainId) {
+    case 'rami-levy':
+      return parseRamiLevyPromotionFile(xmlData, filename);
+    case 'shufersal':
+      return parseShufersalPromotionFile(xmlData, filename);
+    case 'machsanei-hashuk':
+      return parseMahsaneiHashukPromotionFile(xmlData, filename);
+  }
+}
+
+function shouldSkipParsedPromotion(record: ParsedPromotionRecord): boolean {
+  return !record.promotionId || record.items.length === 0;
+}
+
+function toEmbeddedPromotion(promotion: Promotion): EmbeddedPromotion {
+  return {
+    chainId: promotion.chainId,
+    promotionId: promotion.promotionId,
+    description: promotion.description,
+    startAt: promotion.startAt,
+    endAt: promotion.endAt,
+    rewardType: promotion.rewardType,
+    discountType: promotion.discountType,
+    discountRate: promotion.discountRate,
+    minQty: promotion.minQty,
+    maxQty: promotion.maxQty,
+    discountedPrice: promotion.discountedPrice,
+    minItemsOffered: promotion.minItemsOffered,
+    items: promotion.items,
+    parsedPromotionKind: promotion.parsedPromotionKind,
+    rawPayload: promotion.rawPayload,
+    promotionUpdateAt: promotion.promotionUpdateAt,
+    discountedPricePerMida: promotion.discountedPricePerMida,
+    allowMultipleDiscounts: promotion.allowMultipleDiscounts,
+    minPurchaseAmount: promotion.minPurchaseAmount,
+    isWeightedPromo: promotion.isWeightedPromo,
+    clubId: promotion.clubId,
+    remarks: promotion.remarks,
+    isGift: promotion.isGift,
+    isCoupon: promotion.isCoupon,
+    isTotal: promotion.isTotal,
+  };
+}
 
 export class PromoImportService {
-  constructor(private readonly promoRepo: PromotionRepository) {}
+  constructor(
+    private readonly promoRepo: PromotionRepository,
+    private readonly chainProductRepo: ChainProductRepository,
+  ) {}
 
   async importChain(chainId: ChainId): Promise<ChainPromoImportResult> {
     console.log(`[PROMO_IMPORT] chainId=${chainId} starting`);
@@ -49,84 +106,105 @@ export class PromoImportService {
         upsertedCount: 0,
         skippedCount: 0,
         inactiveMarked: 0,
+        productsUpdated: 0,
         sourceFile: null,
         error: `No PromoFull file found for chain: ${chainId}`,
       };
     }
 
-    const xmlData = await decompressIfNeeded(file.rawData);
-    const parsed = parsePromoXml(xmlData, file.filename);
-
+    const parsedFile = parsePromotionFile(chainId, file.rawData, file.filename);
     console.log(
-      `[PROMO_IMPORT] chainId=${chainId} storeId=${parsed.storeId} rawPromotions=${parsed.promotions.length}`,
+      `[PROMO_IMPORT] chainId=${chainId} parsedPromotions=${parsedFile.promotions.length} sourceFile=${file.filename}`,
     );
-    parsed.promotions
-      .slice(0, 3)
-      .forEach((p, i) =>
-        console.log(
-          `[PROMO_IMPORT] sample[${i}] id=${p.promotionId} desc="${p.description}" items=${p.itemCodes.length}`,
-        ),
-      );
 
     const now = new Date();
     const seenPromotionIds: string[] = [];
     let upsertedCount = 0;
     let skippedCount = 0;
 
-    for (const p of parsed.promotions) {
+    for (const record of parsedFile.promotions) {
+      if (shouldSkipParsedPromotion(record)) {
+        skippedCount++;
+        console.log(
+          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${record.promotionId || '(missing)'} reason=missing-id-or-items`,
+        );
+        continue;
+      }
+
+      const startAt = parseDate(record.startDate, record.startHour, 'start');
+      const endAt = parseDate(record.endDate, record.endHour, 'end');
+      const promotionUpdateAt = parseDate(record.promotionUpdateDate, undefined, 'end') ?? undefined;
+
+      const parsedPromotionKind = classifyPromotion({
+        discountedPrice: record.discountedPrice,
+        minQty: record.minQty,
+        minItemsOffered: record.minItemsOffered,
+        discountRate: record.discountRate,
+        discountType: record.discountType,
+        rewardType: record.rewardType,
+        isGift: record.isGift,
+        items: record.items,
+      });
+
       try {
-        if (!p.promotionId || !p.description) {
-          skippedCount++;
-          continue;
-        }
-
-        // Combine date + hour strings into Date objects
-        const startAt = this.combineDateTime(p.startDate, p.startHour);
-        const endAt = this.combineDateTime(p.endDate, p.endHour);
-
         await this.promoRepo.upsertPromo({
           chainId,
-          storeId: parsed.storeId,
-          promotionId: p.promotionId,
-          description: p.description,
+          storeId: parsedFile.storeId,
+          promotionId: record.promotionId,
+          description: record.description,
           startAt,
           endAt,
-          rewardType: p.rewardType,
-          discountType: p.discountType,
-          minQty: p.minQty,
-          maxQty: p.maxQty,
-          discountedPrice: p.discountedPrice,
-          discountedPricePerMida: p.discountedPricePerMida,
-          discountRate: p.discountRate,
-          allowMultipleDiscounts: p.allowMultipleDiscounts,
-          clubId: p.clubId,
-          isGift: p.isGift,
-          isCoupon: p.isCoupon,
-          isTotal: p.isTotal,
-          itemCodes: p.itemCodes,
+          rewardType: record.rewardType,
+          discountType: record.discountType,
+          discountRate: record.discountRate,
+          minQty: record.minQty,
+          maxQty: record.maxQty,
+          discountedPrice: record.discountedPrice,
+          minItemsOffered: record.minItemsOffered,
+          items: record.items,
+          parsedPromotionKind,
+          rawPayload: record.rawPayload,
+          promotionUpdateAt,
+          discountedPricePerMida: record.discountedPricePerMida,
+          allowMultipleDiscounts: record.allowMultipleDiscounts,
+          minPurchaseAmount: record.minPurchaseAmount,
+          isWeightedPromo: record.isWeightedPromo,
+          clubId: record.clubId,
+          remarks: record.remarks,
+          isGift: record.isGift,
+          isCoupon: record.isCoupon,
+          isTotal: record.isTotal,
           lastSeenAt: now,
         });
 
-        seenPromotionIds.push(p.promotionId);
+        seenPromotionIds.push(record.promotionId);
         upsertedCount++;
-      } catch (err) {
+      } catch (error) {
         skippedCount++;
         console.error(
-          `[PROMO_IMPORT] product error — chainId=${chainId} promotionId=${p.promotionId} error=${err instanceof Error ? err.message : String(err)}`,
+          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${record.promotionId} error=${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
 
     console.log(
-      `[PROMO_IMPORT] chainId=${chainId} upserted=${upsertedCount} skipped=${skippedCount}`,
+      `[PROMO_IMPORT] chainId=${chainId} upsertedPromotions=${upsertedCount} skippedPromotions=${skippedCount}`,
     );
 
     const inactiveMarked = await this.promoRepo.markInactiveExcept(
       chainId,
-      parsed.storeId,
+      parsedFile.storeId,
       seenPromotionIds,
     );
-    console.log(`[PROMO_IMPORT] chainId=${chainId} inactiveMarked=${inactiveMarked}`);
+
+    let productsUpdated = 0;
+    try {
+      productsUpdated = await this.mergePromotionsToProducts(chainId, now);
+    } catch (error) {
+      console.error(
+        `[PROMO_IMPORT] merge failed chainId=${chainId} error=${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     return {
       chainId,
@@ -134,6 +212,7 @@ export class PromoImportService {
       upsertedCount,
       skippedCount,
       inactiveMarked,
+      productsUpdated,
       sourceFile: file.filename,
     };
   }
@@ -144,15 +223,16 @@ export class PromoImportService {
     for (const chainId of SUPPORTED_CHAINS) {
       try {
         results.push(await this.importChain(chainId));
-      } catch (err) {
+      } catch (error) {
         results.push({
           chainId,
           success: false,
           upsertedCount: 0,
           skippedCount: 0,
           inactiveMarked: 0,
+          productsUpdated: 0,
           sourceFile: null,
-          error: err instanceof Error ? err.message : String(err),
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -160,21 +240,66 @@ export class PromoImportService {
     return results;
   }
 
-  /** DEV ONLY — verify what is stored in Mongo for a chain after import. */
   async verifyImport(chainId: ChainId): Promise<void> {
     await this.promoRepo.verifyImport(chainId);
   }
 
-  // ─── Private helpers ────────────────────────────────────────────────────────
+  private async mergePromotionsToProducts(chainId: ChainId, now: Date): Promise<number> {
+    const activePromotions = await this.promoRepo.findActiveByChain(chainId, now);
+    const promotionsByItemCode = new Map<string, EmbeddedPromotion[]>();
+    let activePromotionsApplied = 0;
+    let skippedPromotions = 0;
 
-  /**
-   * Combine a date string (YYYY-MM-DD) and optional hour string (HH:MM) into a Date.
-   * Returns null if the date is missing or the resulting Date is invalid.
-   */
-  private combineDateTime(date?: string, hour?: string): Date | null {
-    if (!date) return null;
-    const iso = `${date}T${hour ?? '00:00'}:00`;
-    const d = new Date(iso);
-    return isNaN(d.getTime()) ? null : d;
+    for (const promotion of activePromotions) {
+      if (!hasUsablePromotionWindow(promotion)) {
+        skippedPromotions++;
+        console.log(
+          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${promotion.promotionId} reason=unclear-date-window`,
+        );
+        continue;
+      }
+
+      if (!isPromotionActive(now, promotion.startAt, promotion.endAt)) {
+        skippedPromotions++;
+        console.log(
+          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${promotion.promotionId} reason=inactive-window`,
+        );
+        continue;
+      }
+
+      if (promotion.parsedPromotionKind === PromotionKind.UNKNOWN) {
+        skippedPromotions++;
+        console.log(
+          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${promotion.promotionId} reason=unknown-kind`,
+        );
+        continue;
+      }
+
+      const embeddedPromotion = toEmbeddedPromotion(promotion);
+      for (const item of promotion.items) {
+        if (!promotionsByItemCode.has(item.itemCode)) {
+          promotionsByItemCode.set(item.itemCode, []);
+        }
+        promotionsByItemCode.get(item.itemCode)!.push(embeddedPromotion);
+      }
+
+      activePromotionsApplied++;
+    }
+
+    console.log(
+      `[PROMO_IMPORT] chainId=${chainId} activePromotionsApplied=${activePromotionsApplied} skippedPromotions=${skippedPromotions}`,
+    );
+
+    const productsUpdated = await this.chainProductRepo.mergePromotions(
+      chainId,
+      promotionsByItemCode,
+      now,
+    );
+
+    console.log(
+      `[PROMO_IMPORT] chainId=${chainId} matchedPromotionsToProducts=${productsUpdated}`,
+    );
+
+    return productsUpdated;
   }
 }

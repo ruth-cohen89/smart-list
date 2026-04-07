@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import type { ChainId } from '../../models/chain-product.model';
+import { PromotionKind } from '../../models/promotion.model';
 
 export interface IPromotionDocument extends Document {
   chainId: ChainId;
@@ -10,13 +11,21 @@ export interface IPromotionDocument extends Document {
   endAt: Date | null;
   rewardType?: number;
   discountType?: number;
+  discountRate?: number;
   minQty?: number;
   maxQty?: number;
   discountedPrice?: number;
+  minItemsOffered?: number;
+  items: Array<{ itemCode: string; itemType?: number; isGiftItem?: boolean }>;
+  parsedPromotionKind: PromotionKind;
+  rawPayload: Record<string, unknown>;
+  promotionUpdateAt?: Date;
   discountedPricePerMida?: number;
-  discountRate?: number;
   allowMultipleDiscounts?: boolean;
+  minPurchaseAmount?: number;
+  isWeightedPromo?: boolean;
   clubId?: string;
+  remarks?: string;
   isGift?: boolean;
   isCoupon?: boolean;
   isTotal?: boolean;
@@ -26,6 +35,15 @@ export interface IPromotionDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const PromotionItemSchema = new Schema(
+  {
+    itemCode: { type: String, required: true, trim: true },
+    itemType: { type: Number },
+    isGiftItem: { type: Boolean },
+  },
+  { _id: false },
+);
 
 const PromotionSchema = new Schema<IPromotionDocument>(
   {
@@ -41,13 +59,26 @@ const PromotionSchema = new Schema<IPromotionDocument>(
     endAt: { type: Date, default: null },
     rewardType: { type: Number },
     discountType: { type: Number },
+    discountRate: { type: Number, min: 0 },
     minQty: { type: Number, min: 0 },
     maxQty: { type: Number, min: 0 },
     discountedPrice: { type: Number, min: 0 },
+    minItemsOffered: { type: Number, min: 0 },
+    items: { type: [PromotionItemSchema], default: [] },
+    parsedPromotionKind: {
+      type: String,
+      required: true,
+      enum: Object.values(PromotionKind),
+      default: PromotionKind.UNKNOWN,
+    },
+    rawPayload: { type: Schema.Types.Mixed, required: true },
+    promotionUpdateAt: { type: Date },
     discountedPricePerMida: { type: Number, min: 0 },
-    discountRate: { type: Number, min: 0 },
     allowMultipleDiscounts: { type: Boolean },
+    minPurchaseAmount: { type: Number, min: 0 },
+    isWeightedPromo: { type: Boolean },
     clubId: { type: String, trim: true },
+    remarks: { type: String, trim: true },
     isGift: { type: Boolean },
     isCoupon: { type: Boolean },
     isTotal: { type: Boolean },
@@ -58,15 +89,8 @@ const PromotionSchema = new Schema<IPromotionDocument>(
   { timestamps: true },
 );
 
-// Upsert key — unique promotion identity per chain + store
 PromotionSchema.index({ chainId: 1, storeId: 1, promotionId: 1 }, { unique: true });
-
-// Active promo lookup scoped to a chain, filtered by expiry
-// Used by future price-comparison: "active promos for chain X ending after now"
-PromotionSchema.index({ chainId: 1, isActive: 1, endAt: 1 });
-
-// Per-item promo lookup: "which promos apply to itemCode X on chain Y?"
-// itemCodes is an array — Mongoose creates a multikey index automatically
+PromotionSchema.index({ chainId: 1, isActive: 1, startAt: 1, endAt: 1 });
 PromotionSchema.index({ itemCodes: 1, chainId: 1, isActive: 1 });
 
 export default mongoose.model<IPromotionDocument>('Promotion', PromotionSchema);

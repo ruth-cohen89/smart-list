@@ -7,8 +7,10 @@ import { normalizeName } from '../utils/normalize';
 import { ramiLevyProvider } from '../infrastructure/catalog-import/providers/rami-levy.provider';
 import { machsaneiHashukProvider } from '../infrastructure/catalog-import/providers/machsanei-hashuk.provider';
 import { ShufersalProvider } from '../infrastructure/catalog-import/providers/shufersal.provider';
-
-// Result types
+import {
+  PromoImportService,
+  type ChainPromoImportResult,
+} from './promo-import.service';
 
 export interface ChainImportResult {
   chainId: ChainId;
@@ -17,10 +19,9 @@ export interface ChainImportResult {
   skippedCount: number;
   inactiveMarked: number;
   sourceFile: string | null;
+  promotionImport?: ChainPromoImportResult;
   error?: string;
 }
-
-// ─── Provider registry ────────────────────────────────────────────────────────
 
 interface CatalogProvider {
   getLatestFile(): Promise<{ filename: string; rawData: Buffer } | null>;
@@ -32,13 +33,14 @@ const PROVIDERS: Record<ChainId, CatalogProvider> = {
   shufersal: new ShufersalProvider(),
 };
 
-// ─── Service ──────────────────────────────────────────────────────────────────
-
 export class CatalogImportService {
-  constructor(private readonly chainProductRepo: ChainProductRepository) {}
+  constructor(
+    private readonly chainProductRepo: ChainProductRepository,
+    private readonly promoImportService?: PromoImportService,
+  ) {}
 
   async importChain(chainId: ChainId): Promise<ChainImportResult> {
-    console.log(`[IMPORT] chainId=${chainId} starting`);
+    console.log(`[IMPORT] chainId=${chainId} starting price import`);
 
     const provider = PROVIDERS[chainId];
     const file = await provider.getLatestFile();
@@ -58,65 +60,73 @@ export class CatalogImportService {
     const xmlData = await decompressIfNeeded(file.rawData);
     const products = parsePriceXml(xmlData, file.filename);
 
-    console.log(`[IMPORT] chainId=${chainId} parsed=${products.length}`);
-    products
-      .slice(0, 3)
-      .forEach((p, i) =>
-        console.log(
-          `[IMPORT] sample[${i}] code=${p.itemCode} name="${p.itemName}" price=${p.itemPrice} barcode=${p.barcode ?? '(none)'}`,
-        ),
-      );
+    console.log(`[IMPORT] chainId=${chainId} parsedProducts=${products.length}`);
 
-    // ── Validation + upsert loop ─────────────────────────────────────────────
     const now = new Date();
     const seenExternalIds: string[] = [];
     let upsertedCount = 0;
     let skippedCount = 0;
 
-    for (const p of products) {
+    for (const product of products) {
       try {
-        // Lightweight validation — skip records that would fail DB constraints
-        if (!p.itemCode || !p.itemName || isNaN(p.itemPrice) || p.itemPrice < 0) {
+        if (!product.itemCode || !product.itemName || Number.isNaN(product.itemPrice) || product.itemPrice < 0) {
           skippedCount++;
           continue;
         }
 
-        const normalizedName = normalizeName(p.itemName);
+        const normalizedName = normalizeName(product.itemName);
         if (!normalizedName) {
-          console.warn(
-            `[IMPORT] skip — empty normalizedName chainId=${chainId} itemCode=${p.itemCode} name="${p.itemName}"`,
-          );
           skippedCount++;
+          console.warn(
+            `[IMPORT] skipped product chainId=${chainId} itemCode=${product.itemCode} reason=empty-normalized-name`,
+          );
           continue;
         }
 
         await this.chainProductRepo.upsertProduct({
           chainId,
-          externalId: p.itemCode,
-          barcode: p.barcode,
-          originalName: p.itemName,
+          externalId: product.itemCode,
+          barcode: product.barcode,
+          originalName: product.itemName,
           normalizedName,
-          price: p.itemPrice,
-          quantity: p.quantity,
-          unit: p.unitOfMeasure,
+          price: product.itemPrice,
+          quantity: product.quantity,
+          unit: product.unitOfMeasure,
           lastSeenAt: now,
         });
 
-        seenExternalIds.push(p.itemCode);
+        seenExternalIds.push(product.itemCode);
         upsertedCount++;
-      } catch (err) {
+      } catch (error) {
         skippedCount++;
         console.error(
-          `[IMPORT] product error — chainId=${chainId} itemCode=${p.itemCode} name="${p.itemName}" barcode=${p.barcode ?? '(none)'} price=${p.itemPrice} error=${err instanceof Error ? err.message : String(err)}`,
+          `[IMPORT] skipped product chainId=${chainId} itemCode=${product.itemCode} error=${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
 
-    console.log(`[IMPORT] chainId=${chainId} upserted=${upsertedCount} skipped=${skippedCount}`);
-
-    // ── Mark disappeared products inactive ───────────────────────────────────
     const inactiveMarked = await this.chainProductRepo.markInactiveExcept(chainId, seenExternalIds);
-    console.log(`[IMPORT] chainId=${chainId} inactiveMarked=${inactiveMarked}`);
+    let promotionImport: ChainPromoImportResult | undefined;
+
+    if (this.promoImportService) {
+      try {
+        promotionImport = await this.promoImportService.importChain(chainId);
+      } catch (error) {
+        console.error(
+          `[IMPORT] promotion import failed after price import chainId=${chainId} error=${error instanceof Error ? error.message : String(error)}`,
+        );
+        promotionImport = {
+          chainId,
+          success: false,
+          upsertedCount: 0,
+          skippedCount: 0,
+          inactiveMarked: 0,
+          productsUpdated: 0,
+          sourceFile: null,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
 
     return {
       chainId,
@@ -125,6 +135,7 @@ export class CatalogImportService {
       skippedCount,
       inactiveMarked,
       sourceFile: file.filename,
+      promotionImport,
     };
   }
 
@@ -134,7 +145,7 @@ export class CatalogImportService {
     for (const chainId of SUPPORTED_CHAINS) {
       try {
         results.push(await this.importChain(chainId));
-      } catch (err) {
+      } catch (error) {
         results.push({
           chainId,
           success: false,
@@ -142,7 +153,7 @@ export class CatalogImportService {
           skippedCount: 0,
           inactiveMarked: 0,
           sourceFile: null,
-          error: err instanceof Error ? err.message : String(err),
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -150,7 +161,6 @@ export class CatalogImportService {
     return results;
   }
 
-  /** DEV ONLY — verify what is stored in Mongo for a chain after import. */
   async verifyImport(chainId: ChainId): Promise<void> {
     await this.chainProductRepo.verifyImport(chainId);
   }

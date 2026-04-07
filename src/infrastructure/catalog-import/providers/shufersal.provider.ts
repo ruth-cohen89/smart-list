@@ -1,17 +1,11 @@
-/**
- * ShufersalProvider — handles all interaction with prices.shufersal.co.il.
- *
- * The UpdateCategory endpoint returns an HTML page with a <table> of file rows.
- * Each row's first <a href> is a signed Azure Blob download URL; the filename
- * is the last path segment of that URL (e.g. PriceFull...-413-...202604040340.gz).
- */
 import https from 'https';
 import { URL } from 'url';
 import { downloadFile } from '../chain-source.client';
 
 const BASE_URL = 'https://prices.shufersal.co.il';
-const PRICE_FULL_CAT_ID = 2;
-const STORE_ID = '413';
+const DEFAULT_PRICE_FULL_CATEGORY_ID = 2;
+const DEFAULT_PROMO_FULL_CATEGORY_ID = 3;
+const DEFAULT_STORE_ID = '413';
 
 interface FileEntry {
   filename: string;
@@ -23,58 +17,68 @@ export interface ProviderFile {
   rawData: Buffer;
 }
 
+export interface ShufersalProviderOptions {
+  categoryId?: number;
+  filePrefix?: 'PriceFull' | 'PromoFull';
+  storeId?: string;
+}
+
 export class ShufersalProvider {
+  private readonly categoryId: number;
+  private readonly filePrefix: 'PriceFull' | 'PromoFull';
+  private readonly storeId: string;
+
+  constructor(options: ShufersalProviderOptions = {}) {
+    this.filePrefix = options.filePrefix ?? 'PriceFull';
+    this.categoryId =
+      options.categoryId ??
+      (this.filePrefix === 'PromoFull'
+        ? DEFAULT_PROMO_FULL_CATEGORY_ID
+        : DEFAULT_PRICE_FULL_CATEGORY_ID);
+    this.storeId = options.storeId ?? DEFAULT_STORE_ID;
+  }
+
   async getLatestFile(): Promise<ProviderFile | null> {
-    console.log(`[IMPORT] ShufersalProvider start — chainId: shufersal`);
-    console.log(`[IMPORT] source: ${BASE_URL}`);
+    console.log(
+      `[IMPORT] ShufersalProvider start chainId=shufersal filePrefix=${this.filePrefix} categoryId=${this.categoryId}`,
+    );
 
     const listingUrl =
       `${BASE_URL}/FileObject/UpdateCategory` +
-      `?catID=${PRICE_FULL_CAT_ID}&storeId=${STORE_ID}&paginate=true&page=1`;
+      `?catID=${this.categoryId}&storeId=${this.storeId}&paginate=true&page=1`;
 
     const { body: html, contentType } = await this.fetchHtml(listingUrl);
-
-    console.log(`[IMPORT] content-type: ${contentType}`);
-    console.log(`[IMPORT] response preview: ${html.slice(0, 300)}`);
+    console.log(`[IMPORT] content-type=${contentType}`);
 
     const entries = this.parseTableRows(html);
-    console.log(`[IMPORT] rows found: ${entries.length}`);
-    console.log(`[IMPORT] candidate files: ${entries.map((e) => e.filename).join(', ') || 'none'}`);
-
-    const filtered = entries.filter(
-      (e) => e.filename.startsWith('PriceFull') && e.filename.includes(`-${STORE_ID}-`),
+    const discovered = entries.filter(
+      (entry) =>
+        entry.filename.startsWith(this.filePrefix) && entry.filename.includes(`-${this.storeId}-`),
     );
 
-    console.log(`[IMPORT] files found: ${filtered.length}`);
+    console.log(
+      `[IMPORT] discovered ${this.filePrefix} files for storeId=${this.storeId}: ${discovered.map((entry) => entry.filename).join(', ') || 'none'}`,
+    );
 
-    if (filtered.length === 0) {
-      console.log(`[IMPORT] no PriceFull file found for storeId: ${STORE_ID}`);
+    if (discovered.length === 0) {
+      console.log(`[IMPORT] no ${this.filePrefix} file found for storeId=${this.storeId}`);
       return null;
     }
 
-    // Pick newest by lex sort — timestamp is embedded in the filename
-    const latest = filtered.reduce((a, b) => (b.filename.localeCompare(a.filename) > 0 ? b : a));
-    console.log(`[IMPORT] selected file: ${latest.filename}`);
+    const latest = discovered.reduce((current, candidate) =>
+      candidate.filename.localeCompare(current.filename) > 0 ? candidate : current,
+    );
 
-    try {
-      const rawData = await downloadFile(latest.downloadUrl);
-      console.log(`[IMPORT] download success: ${latest.filename} (${rawData.length} bytes)`);
-      return { filename: latest.filename, rawData };
-    } catch (err) {
-      console.error(
-        `[IMPORT] download failure: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      throw err;
-    }
+    console.log(`[IMPORT] selected latest ${this.filePrefix} file: ${latest.filename}`);
+
+    const rawData = await downloadFile(latest.downloadUrl);
+    console.log(
+      `[IMPORT] downloaded ${this.filePrefix} file: ${latest.filename} (${rawData.length} bytes)`,
+    );
+
+    return { filename: latest.filename, rawData };
   }
 
-  // ─── Private helpers ────────────────────────────────────────────────────────
-
-  /**
-   * Parse <tr class="webgrid-row-style"> rows from the HTML table.
-   * The first <a href="..."> in each row is the signed Azure Blob download URL.
-   * The filename is the last path segment of that URL (before the "?" query string).
-   */
   private parseTableRows(html: string): FileEntry[] {
     const entries: FileEntry[] = [];
     const rowRe = /<tr[^>]*class="webgrid-row-style"[^>]*>([\s\S]*?)<\/tr>/gi;
@@ -82,13 +86,10 @@ export class ShufersalProvider {
 
     let rowMatch: RegExpExecArray | null;
     while ((rowMatch = rowRe.exec(html)) !== null) {
-      const rowHtml = rowMatch[1];
-      const hrefMatch = hrefRe.exec(rowHtml);
+      const hrefMatch = hrefRe.exec(rowMatch[1]);
       if (!hrefMatch) continue;
 
-      // HTML-decode &amp; that browsers render as &
       const downloadUrl = hrefMatch[1].replace(/&amp;/g, '&');
-
       try {
         const pathname = new URL(downloadUrl).pathname;
         const filename = pathname.split('/').pop();
@@ -96,7 +97,7 @@ export class ShufersalProvider {
           entries.push({ filename, downloadUrl });
         }
       } catch {
-        // skip malformed URLs
+        // Ignore malformed listing entries.
       }
     }
 
@@ -108,12 +109,16 @@ export class ShufersalProvider {
       const req = https.get(url, (res) => {
         const contentType = res.headers['content-type'] ?? 'unknown';
         const chunks: Buffer[] = [];
-        res.on('data', (c: Buffer) => chunks.push(c));
-        res.on('end', () =>
-          resolve({ body: Buffer.concat(chunks).toString('utf-8'), contentType }),
-        );
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          resolve({
+            body: Buffer.concat(chunks).toString('utf-8'),
+            contentType,
+          });
+        });
         res.on('error', reject);
       });
+
       req.on('error', reject);
     });
   }
