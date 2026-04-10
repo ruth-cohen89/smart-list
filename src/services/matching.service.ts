@@ -1,4 +1,5 @@
 import { normalizeName } from '../utils/normalize';
+import { tokenSet, scoreProduct as scoreProductShared } from '../utils/scoring';
 import type { ShoppingItem, MatchedProduct, MatchStatus } from '../models/shopping-list.model';
 
 // ---------------------------------------------------------------------------
@@ -99,75 +100,26 @@ export class MatchingService {
     return this.catalog
       .map((product) => ({
         product,
-        score: this.scoreProduct(product, inputTokens, normalizedInput, itemCategory),
+        score: this.scoreProductEntry(product, inputTokens, normalizedInput, itemCategory),
       }))
       .filter((c) => c.score > 0)
       .sort((a, b) => b.score - a.score);
   }
 
-  private scoreProduct(
+  private scoreProductEntry(
     product: ProductEntry,
     inputTokens: Set<string>,
     normalizedInput: string,
     itemCategory?: string,
   ): number {
-    const productTokens = tokenSet(product.normalizedName);
-
-    // Jaccard over word tokens (primary signal)
-    const tokenScore = jaccardSets(inputTokens, productTokens);
-
-    // Bigram character similarity (fuzzy fallback for partial / misspelled input)
-    const charScore = jaccardCharNgrams(normalizedInput, product.normalizedName, 2);
-
-    // When token overlap is strong, trust it; otherwise fall back to char similarity
-    let score = tokenScore >= 0.5 ? tokenScore : Math.max(tokenScore, charScore * 0.8);
-
-    // Small category bonus — not a hard gate, just a tiebreaker
-    if (
-      itemCategory &&
-      product.category &&
-      normalizeName(itemCategory) === normalizeName(product.category)
-    ) {
-      score = Math.min(1, score + 0.05);
-    }
-
-    return score;
+    return scoreProductShared({
+      inputTokens,
+      normalizedInput,
+      candidateNormalizedName: product.normalizedName,
+      inputCategory: itemCategory,
+      candidateCategory: product.category,
+    });
   }
-}
-
-// ---------------------------------------------------------------------------
-// Pure utility functions
-// ---------------------------------------------------------------------------
-
-function tokenSet(str: string): Set<string> {
-  return new Set(str.split(' ').filter(Boolean));
-}
-
-function jaccardSets(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 && b.size === 0) return 1;
-  const intersection = [...a].filter((t) => b.has(t)).length;
-  const union = new Set([...a, ...b]).size;
-  return union > 0 ? intersection / union : 0;
-}
-
-function jaccardCharNgrams(a: string, b: string, n: number): number {
-  const aNgrams = charNgramSet(a, n);
-  const bNgrams = charNgramSet(b, n);
-  if (aNgrams.size === 0 && bNgrams.size === 0) return 1;
-  if (aNgrams.size === 0 || bNgrams.size === 0) return 0;
-  let intersection = 0;
-  for (const ng of aNgrams) {
-    if (bNgrams.has(ng)) intersection++;
-  }
-  return intersection / (aNgrams.size + bNgrams.size - intersection);
-}
-
-function charNgramSet(str: string, n: number): Set<string> {
-  const result = new Set<string>();
-  for (let i = 0; i <= str.length - n; i++) {
-    result.add(str.slice(i, i + n));
-  }
-  return result;
 }
 
 function toMatchedProduct(product: ProductEntry, confidence: number): MatchedProduct {

@@ -1,7 +1,7 @@
 import { PromotionRepository } from '../repositories/promotion.repository';
 import { ChainProductRepository } from '../repositories/chain-product.repository';
 import { SUPPORTED_CHAINS } from '../models/chain-product.model';
-import type { ChainId, EmbeddedPromotion } from '../models/chain-product.model';
+import type { ChainId, ProductPromotionSnapshot } from '../models/chain-product.model';
 import { PromotionKind, type Promotion } from '../models/promotion.model';
 import type {
   ParsedPromotionFile,
@@ -60,33 +60,29 @@ function shouldSkipParsedPromotion(record: ParsedPromotionRecord): boolean {
   return !record.promotionId || record.items.length === 0;
 }
 
-function toEmbeddedPromotion(promotion: Promotion): EmbeddedPromotion {
+function toProductPromotionSnapshot(promotion: Promotion): ProductPromotionSnapshot {
   return {
     chainId: promotion.chainId,
     promotionId: promotion.promotionId,
     description: promotion.description,
     startAt: promotion.startAt,
     endAt: promotion.endAt,
-    rewardType: promotion.rewardType,
+    parsedPromotionKind: promotion.parsedPromotionKind,
     discountType: promotion.discountType,
     discountRate: promotion.discountRate,
+    discountedPrice: promotion.discountedPrice,
     minQty: promotion.minQty,
     maxQty: promotion.maxQty,
-    discountedPrice: promotion.discountedPrice,
     minItemsOffered: promotion.minItemsOffered,
-    items: promotion.items,
-    parsedPromotionKind: promotion.parsedPromotionKind,
-    rawPayload: promotion.rawPayload,
-    promotionUpdateAt: promotion.promotionUpdateAt,
     discountedPricePerMida: promotion.discountedPricePerMida,
-    allowMultipleDiscounts: promotion.allowMultipleDiscounts,
     minPurchaseAmount: promotion.minPurchaseAmount,
     isWeightedPromo: promotion.isWeightedPromo,
-    clubId: promotion.clubId,
-    remarks: promotion.remarks,
+    allowMultipleDiscounts: promotion.allowMultipleDiscounts,
     isGift: promotion.isGift,
     isCoupon: promotion.isCoupon,
     isTotal: promotion.isTotal,
+    clubId: promotion.clubId,
+    remarks: promotion.remarks,
   };
 }
 
@@ -265,48 +261,39 @@ export class PromoImportService {
 
   private async mergePromotionsToProducts(chainId: ChainId, now: Date): Promise<number> {
     const activePromotions = await this.promoRepo.findActiveByChain(chainId, now);
-    const promotionsByItemCode = new Map<string, EmbeddedPromotion[]>();
+    const promotionsByItemCode = new Map<string, ProductPromotionSnapshot[]>();
     let activePromotionsApplied = 0;
     let skippedPromotions = 0;
 
     for (const promotion of activePromotions) {
       if (!hasUsablePromotionWindow(promotion)) {
         skippedPromotions++;
-        console.log(
-          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${promotion.promotionId} reason=unclear-date-window`,
-        );
         continue;
       }
 
       if (!isPromotionActive(now, promotion.startAt, promotion.endAt)) {
         skippedPromotions++;
-        console.log(
-          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${promotion.promotionId} reason=inactive-window`,
-        );
         continue;
       }
 
       if (promotion.parsedPromotionKind === PromotionKind.UNKNOWN) {
         skippedPromotions++;
-        console.log(
-          `[PROMO_IMPORT] skipped promotion chainId=${chainId} promotionId=${promotion.promotionId} reason=unknown-kind`,
-        );
         continue;
       }
 
-      const embeddedPromotion = toEmbeddedPromotion(promotion);
+      const snapshot = toProductPromotionSnapshot(promotion);
       for (const item of promotion.items) {
         if (!promotionsByItemCode.has(item.itemCode)) {
           promotionsByItemCode.set(item.itemCode, []);
         }
-        promotionsByItemCode.get(item.itemCode)!.push(embeddedPromotion);
+        promotionsByItemCode.get(item.itemCode)!.push(snapshot);
       }
 
       activePromotionsApplied++;
     }
 
     console.log(
-      `[PROMO_IMPORT] chainId=${chainId} activePromotionsApplied=${activePromotionsApplied} skippedPromotions=${skippedPromotions}`,
+      `[PROMO_IMPORT] chainId=${chainId} activePromotionsApplied=${activePromotionsApplied} skippedPromotions=${skippedPromotions} itemCodes=${promotionsByItemCode.size}`,
     );
 
     const productsUpdated = await this.chainProductRepo.mergePromotions(

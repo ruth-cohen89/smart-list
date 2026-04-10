@@ -135,8 +135,13 @@ export function isPromotionActive(now: Date, startAt: Date | null, endAt: Date |
 }
 
 export function hasUsablePromotionWindow(
-  promotion: Pick<NormalizedPromotion, 'startAt' | 'endAt' | 'rawPayload'>,
+  promotion: Pick<NormalizedPromotion, 'startAt' | 'endAt'> & { rawPayload?: Record<string, unknown> },
 ): boolean {
+  if (!promotion.rawPayload) {
+    // Product-level snapshot — dates were already validated during merge
+    return promotion.startAt !== null || promotion.endAt !== null;
+  }
+
   const rawStartDate = promotion.rawPayload.PromotionStartDate;
   const rawEndDate = promotion.rawPayload.PromotionEndDate;
 

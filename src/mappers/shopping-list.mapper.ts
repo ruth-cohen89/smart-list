@@ -13,6 +13,7 @@ const mapItem = (item: IShoppingItemDocument): ShoppingItem => ({
   notes: item.notes,
   priority: item.priority,
   barcode: item.barcode,
+  productId: item.productId ? String(item.productId) : undefined,
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
   rawName: item.rawName,

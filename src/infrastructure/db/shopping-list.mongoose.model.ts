@@ -11,6 +11,7 @@ export interface IShoppingItemDocument extends Document {
   notes?: string;
   priority?: ItemPriority;
   barcode?: string;
+  productId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
   // Matching fields
@@ -45,6 +46,7 @@ const ShoppingItemSchema = new Schema<IShoppingItemDocument>(
     notes: { type: String, trim: true, maxlength: 200 },
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
     barcode: { type: String, trim: true, maxlength: 50 },
+    productId: { type: Schema.Types.ObjectId, ref: 'Product' },
     // Matching fields
     rawName: { type: String, trim: true },
     normalizedName: { type: String, trim: true },

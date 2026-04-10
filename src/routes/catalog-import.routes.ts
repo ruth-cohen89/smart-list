@@ -3,10 +3,14 @@ import type { Request, Response, NextFunction } from 'express';
 import { CatalogImportController } from '../controllers/catalog-import.controller';
 import { CatalogImportService } from '../services/catalog-import.service';
 import { ChainProductRepository } from '../repositories/chain-product.repository';
+import { ProductRepository } from '../repositories/product.repository';
+import { ProductResolutionService } from '../services/product-resolution.service';
 import { AppError } from '../errors/app-error';
 
 const chainProductRepo = new ChainProductRepository();
-const service = new CatalogImportService(chainProductRepo);
+const productRepo = new ProductRepository();
+const productResolution = new ProductResolutionService(productRepo);
+const service = new CatalogImportService(chainProductRepo, productResolution);
 const controller = new CatalogImportController(service);
 
 function requireImportSecret(req: Request, _res: Response, next: NextFunction) {

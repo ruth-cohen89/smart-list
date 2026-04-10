@@ -7,6 +7,7 @@ import { normalizeName } from '../utils/normalize';
 import { ramiLevyProvider } from '../infrastructure/catalog-import/providers/rami-levy.provider';
 import { machsaneiHashukProvider } from '../infrastructure/catalog-import/providers/machsanei-hashuk.provider';
 import { ShufersalProvider } from '../infrastructure/catalog-import/providers/shufersal.provider';
+import { ProductResolutionService } from './product-resolution.service';
 
 export interface ChainImportResult {
   chainId: ChainId;
@@ -29,7 +30,10 @@ const PROVIDERS: Record<ChainId, CatalogProvider> = {
 };
 
 export class CatalogImportService {
-  constructor(private readonly chainProductRepo: ChainProductRepository) {}
+  constructor(
+    private readonly chainProductRepo: ChainProductRepository,
+    private readonly productResolution: ProductResolutionService,
+  ) {}
 
   async importChain(chainId: ChainId): Promise<ChainImportResult> {
     console.log(`[IMPORT] chainId=${chainId} starting price import`);
@@ -75,6 +79,9 @@ export class CatalogImportService {
           continue;
         }
 
+        // Resolve to a global Product (packaged by barcode, produce by catalog)
+        const resolved = await this.productResolution.resolve(product);
+
         await this.chainProductRepo.upsertProduct({
           chainId,
           externalId: product.itemCode,
@@ -85,6 +92,8 @@ export class CatalogImportService {
           quantity: product.quantity,
           unit: product.unitOfMeasure,
           lastSeenAt: now,
+          productId: resolved?.product.id,
+          productType: resolved?.productType,
         });
 
         seenExternalIds.push(product.itemCode);

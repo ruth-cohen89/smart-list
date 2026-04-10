@@ -1,0 +1,806 @@
+import { normalizeName } from '../utils/normalize';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type ProduceCategory = 'פרי' | 'ירק' | 'עשבי תיבול';
+
+export interface ProduceCatalogEntry {
+  canonicalKey: string;
+  canonicalName: string;
+  normalizedName: string;
+  aliases: string[];
+  normalizedAliases: string[];
+  category: ProduceCategory;
+  unitType: 'ק"ג' | 'יחידה';
+  isWeighted: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Raw seed data
+// ---------------------------------------------------------------------------
+
+interface RawProduceEntry {
+  canonicalKey: string;
+  canonicalName: string;
+  aliases: string[];
+  category: ProduceCategory;
+  unitType: 'ק"ג' | 'יחידה';
+  isWeighted: boolean;
+}
+
+const RAW_CATALOG: RawProduceEntry[] = [
+  // ── פירות (Fruits) ──────────────────────────────────────────────────────
+  {
+    canonicalKey: 'apple',
+    canonicalName: 'תפוח',
+    aliases: ['תפוח', 'תפוחים', 'תפוח עץ', 'תפוח חרמון', 'תפוח ירוק', 'תפוח אדום', 'תפוח סמית', 'גרני סמית', 'תפוח גולדן', 'תפוח פינק ליידי', 'תפוח פוג\'י', 'תפוח גאלה'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'banana',
+    canonicalName: 'בננה',
+    aliases: ['בננה', 'בננות', 'בננה אורגנית'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'orange',
+    canonicalName: 'תפוז',
+    aliases: ['תפוז', 'תפוזים', 'תפוז שמוטי', 'תפוז נבל', 'תפוז ולנסיה'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'clementine',
+    canonicalName: 'קלמנטינה',
+    aliases: ['קלמנטינה', 'קלמנטינות', 'מנדרינה', 'מנדרינות'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'grapefruit',
+    canonicalName: 'אשכולית',
+    aliases: ['אשכולית', 'אשכוליות', 'אשכולית אדומה', 'אשכולית לבנה'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'lemon',
+    canonicalName: 'לימון',
+    aliases: ['לימון', 'לימונים'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'lime',
+    canonicalName: 'ליים',
+    aliases: ['ליים', 'ליימים'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'pomelo',
+    canonicalName: 'פומלה',
+    aliases: ['פומלה', 'פומלו', 'פומליות'],
+    category: 'פרי',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'grape',
+    canonicalName: 'ענבים',
+    aliases: ['ענבים', 'ענבים שחורים', 'ענבים ירוקים', 'ענבים אדומים', 'ענבי תמר'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'watermelon',
+    canonicalName: 'אבטיח',
+    aliases: ['אבטיח', 'אבטיחים'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'melon',
+    canonicalName: 'מלון',
+    aliases: ['מלון', 'מלונים', 'מלון גליל', 'מלון ענות'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'strawberry',
+    canonicalName: 'תות שדה',
+    aliases: ['תות', 'תותים', 'תות שדה'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'blueberry',
+    canonicalName: 'אוכמניות',
+    aliases: ['אוכמניות', 'אוכמנית'],
+    category: 'פרי',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'raspberry',
+    canonicalName: 'פטל',
+    aliases: ['פטל', 'פטלים'],
+    category: 'פרי',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'peach',
+    canonicalName: 'אפרסק',
+    aliases: ['אפרסק', 'אפרסקים'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'nectarine',
+    canonicalName: 'נקטרינה',
+    aliases: ['נקטרינה', 'נקטרינות'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'plum',
+    canonicalName: 'שזיף',
+    aliases: ['שזיף', 'שזיפים', 'שזיף שחור', 'שזיף אדום'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'cherry',
+    canonicalName: 'דובדבן',
+    aliases: ['דובדבן', 'דובדבנים'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'apricot',
+    canonicalName: 'משמש',
+    aliases: ['משמש', 'משמשים'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'pear',
+    canonicalName: 'אגס',
+    aliases: ['אגס', 'אגסים', 'אגס ספדונה'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'persimmon',
+    canonicalName: 'אפרסמון',
+    aliases: ['אפרסמון', 'אפרסמונים', 'שרון פרוט'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'pomegranate',
+    canonicalName: 'רימון',
+    aliases: ['רימון', 'רימונים'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'fig',
+    canonicalName: 'תאנה',
+    aliases: ['תאנה', 'תאנים'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'date',
+    canonicalName: 'תמר',
+    aliases: ['תמר', 'תמרים', 'תמר מג\'הול', 'מג\'ול'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'mango',
+    canonicalName: 'מנגו',
+    aliases: ['מנגו', 'מנגואים'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'avocado',
+    canonicalName: 'אבוקדו',
+    aliases: ['אבוקדו', 'אבוקדואים', 'אבוקדו חלק', 'אבוקדו מגורען', 'אבוקדו אטינגר', 'אבוקדו האס', 'אבוקדו פינקרטון'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'pineapple',
+    canonicalName: 'אננס',
+    aliases: ['אננס', 'אננסים'],
+    category: 'פרי',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'kiwi',
+    canonicalName: 'קיווי',
+    aliases: ['קיווי', 'קיוי'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'passion-fruit',
+    canonicalName: 'פסיפלורה',
+    aliases: ['פסיפלורה', 'שעונית', 'פסיון פרוט'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'guava',
+    canonicalName: 'גויאבה',
+    aliases: ['גויאבה', 'גויאבות'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'lychee',
+    canonicalName: 'ליצ\'י',
+    aliases: ['ליצ\'י', 'ליצי'],
+    category: 'פרי',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'coconut',
+    canonicalName: 'קוקוס',
+    aliases: ['קוקוס', 'קוקוס טרי'],
+    category: 'פרי',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+
+  // ── ירקות (Vegetables) ──────────────────────────────────────────────────
+  {
+    canonicalKey: 'tomato',
+    canonicalName: 'עגבניה',
+    aliases: ['עגבניה', 'עגבניות', 'עגבנייה', 'עגבניות שרי', 'עגבניות שרי מתוקות', 'עגבניית שרי', 'עגבניות אשכולות'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'cucumber',
+    canonicalName: 'מלפפון',
+    aliases: ['מלפפון', 'מלפפונים', 'מלפפון בייבי'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'pepper-red',
+    canonicalName: 'גמבה אדומה',
+    aliases: ['גמבה אדומה', 'פלפל אדום', 'גמבה'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'pepper-green',
+    canonicalName: 'פלפל ירוק',
+    aliases: ['פלפל ירוק', 'פלפל'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'pepper-yellow',
+    canonicalName: 'גמבה צהובה',
+    aliases: ['גמבה צהובה', 'פלפל צהוב'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'hot-pepper',
+    canonicalName: 'פלפל חריף',
+    aliases: ['פלפל חריף', 'צ\'ילי', 'פלפל חאלפיניו', 'פלפל חריף ירוק', 'פלפל חריף אדום'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'onion',
+    canonicalName: 'בצל',
+    aliases: ['בצל', 'בצלים', 'בצל יבש'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'red-onion',
+    canonicalName: 'בצל סגול',
+    aliases: ['בצל סגול', 'בצל אדום'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'green-onion',
+    canonicalName: 'בצל ירוק',
+    aliases: ['בצל ירוק', 'בצלצל'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'garlic',
+    canonicalName: 'שום',
+    aliases: ['שום', 'ראש שום', 'שום טרי'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'potato',
+    canonicalName: 'תפוח אדמה',
+    aliases: ['תפוח אדמה', 'תפוחי אדמה', 'תפוד', 'תפודי אדמה'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'sweet-potato',
+    canonicalName: 'בטטה',
+    aliases: ['בטטה', 'בטטות', 'תפוח אדמה מתוק'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'carrot',
+    canonicalName: 'גזר',
+    aliases: ['גזר', 'גזרים', 'גזר בייבי'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'zucchini',
+    canonicalName: 'קישוא',
+    aliases: ['קישוא', 'קישואים', 'קישוא ירוק'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'eggplant',
+    canonicalName: 'חציל',
+    aliases: ['חציל', 'חצילים', 'חציל שחור'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'cabbage',
+    canonicalName: 'כרוב',
+    aliases: ['כרוב', 'כרוב לבן'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'red-cabbage',
+    canonicalName: 'כרוב סגול',
+    aliases: ['כרוב סגול', 'כרוב אדום'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'cauliflower',
+    canonicalName: 'כרובית',
+    aliases: ['כרובית'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'broccoli',
+    canonicalName: 'ברוקולי',
+    aliases: ['ברוקולי'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'lettuce',
+    canonicalName: 'חסה',
+    aliases: ['חסה', 'חסה מתולתלת', 'חסה רומית'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'spinach',
+    canonicalName: 'תרד',
+    aliases: ['תרד', 'עלי תרד'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'celery',
+    canonicalName: 'סלרי',
+    aliases: ['סלרי', 'סלרי שורש'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'parsley-root',
+    canonicalName: 'שורש פטרוזיליה',
+    aliases: ['שורש פטרוזיליה', 'פטרוזיליה שורש'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'leek',
+    canonicalName: 'כרישה',
+    aliases: ['כרישה', 'כרישות', 'כרשה'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'fennel',
+    canonicalName: 'שומר',
+    aliases: ['שומר'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'radish',
+    canonicalName: 'צנון',
+    aliases: ['צנון', 'צנונות', 'צנונית'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'turnip',
+    canonicalName: 'לפת',
+    aliases: ['לפת'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'beet',
+    canonicalName: 'סלק',
+    aliases: ['סלק'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'kohlrabi',
+    canonicalName: 'קולורבי',
+    aliases: ['קולורבי', 'קולרבי'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'corn',
+    canonicalName: 'תירס',
+    aliases: ['תירס', 'קלח תירס'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'mushroom',
+    canonicalName: 'פטריות',
+    aliases: ['פטריות', 'פטריות שמפיניון', 'פטריות שיטאקי', 'פטריות פורטובלו', 'שמפיניון', 'פטריה'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'artichoke',
+    canonicalName: 'ארטישוק',
+    aliases: ['ארטישוק', 'חרשוף'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'asparagus',
+    canonicalName: 'אספרגוס',
+    aliases: ['אספרגוס'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'green-beans',
+    canonicalName: 'שעועית ירוקה',
+    aliases: ['שעועית ירוקה', 'שעועית'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'peas',
+    canonicalName: 'אפונה',
+    aliases: ['אפונה', 'אפונה טרייה', 'אפונית'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'pumpkin',
+    canonicalName: 'דלעת',
+    aliases: ['דלעת', 'דלורית', 'דלעת ערמונים'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'okra',
+    canonicalName: 'במיה',
+    aliases: ['במיה'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+  {
+    canonicalKey: 'chard',
+    canonicalName: 'מנגולד',
+    aliases: ['מנגולד', 'עלי מנגולד', 'סלק עלים'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'kale',
+    canonicalName: 'קייל',
+    aliases: ['קייל', 'כרוב עלים'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'arugula',
+    canonicalName: 'רוקט',
+    aliases: ['רוקט', 'רוקולה', 'עלי רוקט'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'ginger',
+    canonicalName: 'ג\'ינג\'ר',
+    aliases: ['ג\'ינג\'ר', 'גינגר', 'זנגביל'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+  },
+
+  // ── עשבי תיבול (Herbs) ──────────────────────────────────────────────────
+  {
+    canonicalKey: 'parsley',
+    canonicalName: 'פטרוזיליה',
+    aliases: ['פטרוזיליה'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'cilantro',
+    canonicalName: 'כוסברה',
+    aliases: ['כוסברה', 'כוזברה'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'dill',
+    canonicalName: 'שמיר',
+    aliases: ['שמיר'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'mint',
+    canonicalName: 'נענע',
+    aliases: ['נענע', 'נענה'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'basil',
+    canonicalName: 'בזיליקום',
+    aliases: ['בזיליקום', 'ריחן'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'rosemary',
+    canonicalName: 'רוזמרין',
+    aliases: ['רוזמרין'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'thyme',
+    canonicalName: 'קורנית',
+    aliases: ['קורנית', 'טימין'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'sage',
+    canonicalName: 'מרווה',
+    aliases: ['מרווה'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'chives',
+    canonicalName: 'עירית',
+    aliases: ['עירית'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'tarragon',
+    canonicalName: 'טרגון',
+    aliases: ['טרגון'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'oregano',
+    canonicalName: 'אורגנו',
+    aliases: ['אורגנו', 'אורגנו טרי'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'lemongrass',
+    canonicalName: 'עשב לימון',
+    aliases: ['עשב לימון', 'למון גראס'],
+    category: 'עשבי תיבול',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Build indexed catalog at module load
+// ---------------------------------------------------------------------------
+
+function buildCatalog(): {
+  entries: ProduceCatalogEntry[];
+  aliasIndex: Map<string, ProduceCatalogEntry>;
+} {
+  const entries: ProduceCatalogEntry[] = [];
+  const aliasIndex = new Map<string, ProduceCatalogEntry>();
+
+  for (const raw of RAW_CATALOG) {
+    const normalizedAliases = raw.aliases.map((a) => normalizeName(a));
+    const entry: ProduceCatalogEntry = {
+      ...raw,
+      normalizedName: normalizeName(raw.canonicalName),
+      normalizedAliases,
+    };
+    entries.push(entry);
+
+    for (const alias of normalizedAliases) {
+      if (alias) {
+        aliasIndex.set(alias, entry);
+      }
+    }
+  }
+
+  return { entries, aliasIndex };
+}
+
+const { entries: PRODUCE_CATALOG, aliasIndex: ALIAS_INDEX } = buildCatalog();
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export { PRODUCE_CATALOG };
+
+export interface ProduceMatchResult {
+  entry: ProduceCatalogEntry;
+  matchedAlias: string;
+}
+
+/**
+ * Match a normalized product name against the produce catalog.
+ *
+ * Rules:
+ * - Match only by exact normalized alias lookup
+ * - No aggressive fuzzy — deterministic only
+ * - Tries full name first, then checks if any alias is contained in the name
+ */
+export function matchProduceCanonical(normalizedName: string): ProduceMatchResult | null {
+  if (!normalizedName) return null;
+
+  // 1. Exact full-name match against aliases
+  const exactMatch = ALIAS_INDEX.get(normalizedName);
+  if (exactMatch) {
+    return { entry: exactMatch, matchedAlias: normalizedName };
+  }
+
+  // 2. Check if the input contains an alias as a whole token sequence
+  //    e.g. "עגבניות שרי מתוקות מארז" should match "עגבניות שרי מתוקות"
+  //    Longest alias first to prefer more specific matches
+  const sortedAliases = [...ALIAS_INDEX.entries()].sort(
+    (a, b) => b[0].length - a[0].length,
+  );
+
+  for (const [alias, entry] of sortedAliases) {
+    if (alias.length < 2) continue;
+
+    // The alias must appear as a whole-word boundary substring
+    const idx = normalizedName.indexOf(alias);
+    if (idx === -1) continue;
+
+    const before = idx === 0 || normalizedName[idx - 1] === ' ';
+    const after =
+      idx + alias.length === normalizedName.length ||
+      normalizedName[idx + alias.length] === ' ';
+
+    if (before && after) {
+      return { entry, matchedAlias: alias };
+    }
+  }
+
+  return null;
+}

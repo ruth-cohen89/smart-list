@@ -1,5 +1,5 @@
-import type { ChainProduct } from '../models/chain-product.model';
-import { PromotionKind, type NormalizedPromotion } from '../models/promotion.model';
+import type { ChainProduct, ProductPromotionSnapshot } from '../models/chain-product.model';
+import { PromotionKind } from '../models/promotion.model';
 import { hasUsablePromotionWindow, isPromotionActive } from '../utils/promo-utils';
 
 export interface EffectivePriceResult {
@@ -7,7 +7,7 @@ export interface EffectivePriceResult {
   effectiveTotalPrice: number;
   effectiveUnitPrice: number;
   savings: number;
-  appliedPromotion: NormalizedPromotion | null;
+  appliedPromotion: ProductPromotionSnapshot | null;
 }
 
 type PriceableProduct = Pick<ChainProduct, 'price' | 'promotions'>;
@@ -57,7 +57,7 @@ export function computeBestEffectivePrice(
 function applyPromotion(
   basePrice: number,
   quantity: number,
-  promotion: NormalizedPromotion,
+  promotion: ProductPromotionSnapshot,
 ): Omit<EffectivePriceResult, 'regularTotalPrice' | 'savings'> | null {
   switch (promotion.parsedPromotionKind) {
     case PromotionKind.FIXED_PRICE_BUNDLE:
@@ -74,7 +74,7 @@ function applyPromotion(
 function applyBundlePromotion(
   basePrice: number,
   quantity: number,
-  promotion: NormalizedPromotion,
+  promotion: ProductPromotionSnapshot,
 ): Omit<EffectivePriceResult, 'regularTotalPrice' | 'savings'> | null {
   const bundleSize = promotion.minQty ?? promotion.minItemsOffered;
   const bundlePrice = promotion.discountedPrice;
@@ -105,7 +105,7 @@ function applyBundlePromotion(
 function applyPercentPromotion(
   basePrice: number,
   quantity: number,
-  promotion: NormalizedPromotion,
+  promotion: ProductPromotionSnapshot,
 ): Omit<EffectivePriceResult, 'regularTotalPrice' | 'savings'> | null {
   const rate = promotion.discountRate;
   const minQty = promotion.minQty ?? 1;
@@ -135,7 +135,7 @@ function applyPercentPromotion(
 function applyAmountOffPromotion(
   basePrice: number,
   quantity: number,
-  promotion: NormalizedPromotion,
+  promotion: ProductPromotionSnapshot,
 ): Omit<EffectivePriceResult, 'regularTotalPrice' | 'savings'> | null {
   const amountOff = promotion.discountRate;
   const minQty = promotion.minQty ?? 1;

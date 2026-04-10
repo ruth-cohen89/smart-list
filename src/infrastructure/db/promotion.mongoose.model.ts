@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import type { ChainId } from '../../models/chain-product.model';
+import { SUPPORTED_CHAINS, type ChainId } from '../../models/chain-product.model';
 import { PromotionKind } from '../../models/promotion.model';
 
 export interface IPromotionDocument extends Document {
@@ -50,7 +50,7 @@ const PromotionSchema = new Schema<IPromotionDocument>(
     chainId: {
       type: String,
       required: true,
-      enum: ['shufersal', 'rami-levy', 'machsanei-hashuk'],
+      enum: SUPPORTED_CHAINS,
     },
     storeId: { type: String, required: true, trim: true },
     promotionId: { type: String, required: true, trim: true },

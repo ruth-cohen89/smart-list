@@ -1,13 +1,15 @@
 import { ShoppingListRepository } from '../repositories/shopping-list.repository';
 import { ChainProductRepository } from '../repositories/chain-product.repository';
 import { normalizeName } from '../utils/normalize';
+import { tokenSet, scoreProduct } from '../utils/scoring';
 import { computeBestEffectivePrice } from './effective-price.service';
+import { matchProduceCanonical } from '../data/produce-catalog';
+import { ProductRepository } from '../repositories/product.repository';
 import type { ShoppingItem } from '../models/shopping-list.model';
-import type { ChainProduct, ChainId } from '../models/chain-product.model';
-import type { NormalizedPromotion } from '../models/promotion.model';
+import type { ChainProduct, ChainId, ProductPromotionSnapshot } from '../models/chain-product.model';
 import { SUPPORTED_CHAINS } from '../models/chain-product.model';
 
-export type MatchSource = 'barcode' | 'name';
+export type MatchSource = 'product_id' | 'barcode' | 'produce' | 'name' | 'matched_product';
 
 export interface MatchedBasketItem {
   shoppingItemId: string;
@@ -20,7 +22,7 @@ export interface MatchedBasketItem {
   regularTotalPrice: number;
   effectiveTotalPrice: number;
   effectiveUnitPrice: number;
-  appliedPromotion: NormalizedPromotion | null;
+  appliedPromotion: ProductPromotionSnapshot | null;
 }
 
 export interface UnmatchedBasketItem {
@@ -41,13 +43,15 @@ export interface ComparisonResult {
   comparedAt: Date;
 }
 
-const MATCH_THRESHOLD = 0.5;
+// Aligned with matching.service thresholds
+const MATCH_THRESHOLD = 0.45;
 const AMBIGUOUS_GAP = 0.1;
 
 export class PriceComparisonService {
   constructor(
     private readonly shoppingListRepo: ShoppingListRepository,
     private readonly chainProductRepo: ChainProductRepository,
+    private readonly productRepo: ProductRepository,
   ) {}
 
   async compareActiveList(userId: string): Promise<ComparisonResult> {
@@ -102,11 +106,40 @@ export class PriceComparisonService {
     item: ShoppingItem,
     chainId: ChainId,
   ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion'> | null> {
+    // 1. productId — highest priority (global product identity)
+    if (item.productId) {
+      const productIdMatches = await this.chainProductRepo.findByProductId(item.productId, chainId);
+      if (productIdMatches.length > 0) {
+        const cheapest = productIdMatches.reduce((current, candidate) =>
+          candidate.price < current.price ? candidate : current,
+        );
+
+        console.log(
+          `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=product_id product="${cheapest.originalName}" status=matched`,
+        );
+
+        return {
+          shoppingItemId: item.id,
+          shoppingItemName: item.name,
+          itemQuantity: item.quantity,
+          product: cheapest,
+          matchSource: 'product_id',
+          score: 1,
+          isAmbiguous: false,
+        };
+      }
+    }
+
+    // 2. Barcode match
     if (item.barcode) {
       const barcodeMatches = await this.chainProductRepo.findByBarcode(item.barcode, chainId);
       if (barcodeMatches.length > 0) {
         const cheapest = barcodeMatches.reduce((current, candidate) =>
           candidate.price < current.price ? candidate : current,
+        );
+
+        console.log(
+          `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=barcode product="${cheapest.originalName}" status=matched`,
         );
 
         return {
@@ -121,7 +154,121 @@ export class PriceComparisonService {
       }
     }
 
+    // 3. Produce catalog match — deterministic, by canonical key
+    const produceResult = await this.matchByProduce(item, chainId);
+    if (produceResult) return produceResult;
+
+    // 4. Existing matchedProduct shortcut — try to resolve by externalProductCode or barcode
+    if (
+      item.matchedProduct &&
+      item.selectionSource &&
+      ['user_selected', 'barcode', 'auto_match'].includes(item.selectionSource)
+    ) {
+      const resolved = await this.resolveMatchedProduct(item, chainId);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    // 5. Name matching (fuzzy fallback)
     return this.matchByName(item, chainId);
+  }
+
+  private async resolveMatchedProduct(
+    item: ShoppingItem,
+    chainId: ChainId,
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion'> | null> {
+    const mp = item.matchedProduct!;
+
+    // Try by externalProductCode first
+    if (mp.externalProductCode) {
+      const product = await this.chainProductRepo.findByExternalId(mp.externalProductCode, chainId);
+      if (product) {
+        console.log(
+          `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=matched_product(externalId) product="${product.originalName}" status=matched`,
+        );
+        return {
+          shoppingItemId: item.id,
+          shoppingItemName: item.name,
+          itemQuantity: item.quantity,
+          product,
+          matchSource: 'matched_product',
+          score: 1,
+          isAmbiguous: false,
+        };
+      }
+
+      // Try externalProductCode as barcode
+      const barcodeMatches = await this.chainProductRepo.findByBarcode(mp.externalProductCode, chainId);
+      if (barcodeMatches.length > 0) {
+        const cheapest = barcodeMatches.reduce((current, candidate) =>
+          candidate.price < current.price ? candidate : current,
+        );
+        console.log(
+          `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=matched_product(barcode) product="${cheapest.originalName}" status=matched`,
+        );
+        return {
+          shoppingItemId: item.id,
+          shoppingItemName: item.name,
+          itemQuantity: item.quantity,
+          product: cheapest,
+          matchSource: 'matched_product',
+          score: 1,
+          isAmbiguous: false,
+        };
+      }
+    }
+
+    console.log(
+      `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=matched_product(fallback) status=not_resolved`,
+    );
+    return null;
+  }
+
+  private async matchByProduce(
+    item: ShoppingItem,
+    chainId: ChainId,
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion'> | null> {
+    const normalizedInput = normalizeName(item.rawName ?? item.name);
+    const produceMatch = matchProduceCanonical(normalizedInput);
+    if (!produceMatch) return null;
+
+    // Find or create global product for this produce
+    const product = await this.productRepo.findOrCreateByCanonicalKey({
+      canonicalKey: produceMatch.entry.canonicalKey,
+      canonicalName: produceMatch.entry.canonicalName,
+      normalizedName: produceMatch.entry.normalizedName,
+      category: produceMatch.entry.category,
+      unitType: produceMatch.entry.unitType,
+      isWeighted: produceMatch.entry.isWeighted,
+    });
+
+    // Find chain products linked to this global product
+    const chainProducts = await this.chainProductRepo.findByProductId(product.id, chainId);
+    if (chainProducts.length === 0) {
+      console.log(
+        `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} status=no_chain_product`,
+      );
+      return null;
+    }
+
+    const cheapest = chainProducts.reduce((current, candidate) =>
+      candidate.price < current.price ? candidate : current,
+    );
+
+    console.log(
+      `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} product="${cheapest.originalName}" status=matched`,
+    );
+
+    return {
+      shoppingItemId: item.id,
+      shoppingItemName: item.name,
+      itemQuantity: item.quantity,
+      product: cheapest,
+      matchSource: 'produce',
+      score: 1,
+      isAmbiguous: false,
+    };
   }
 
   private async matchByName(
@@ -129,27 +276,45 @@ export class PriceComparisonService {
     chainId: ChainId,
   ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion'> | null> {
     const normalizedInput = normalizeName(item.rawName ?? item.name);
+    const inputTokens = tokenSet(normalizedInput);
     const candidates = await this.chainProductRepo.findCandidatesByName(normalizedInput, chainId);
 
     if (candidates.length === 0) {
+      console.log(
+        `[COMPARE][MATCH] chain=${chainId} item="${item.name}" normalized="${normalizedInput}" candidates=0 status=unmatched`,
+      );
       return null;
     }
 
     const scoredCandidates = candidates
       .map((product) => ({
         product,
-        score: tokenOverlapScore(normalizedInput, product.normalizedName),
+        score: scoreProduct({
+          inputTokens,
+          normalizedInput,
+          candidateNormalizedName: product.normalizedName,
+          inputCategory: item.category,
+        }),
       }))
-      .filter((candidate) => candidate.score >= MATCH_THRESHOLD)
-      .sort((left, right) => right.score - left.score);
+      .filter((c) => c.score >= MATCH_THRESHOLD)
+      .sort((a, b) => b.score - a.score);
+
+    const topScores = scoredCandidates.slice(0, 3).map((c) => c.score.toFixed(2));
 
     if (scoredCandidates.length === 0) {
+      console.log(
+        `[COMPARE][MATCH] chain=${chainId} item="${item.name}" normalized="${normalizedInput}" candidates=${candidates.length} topScores=[${topScores}] status=unmatched`,
+      );
       return null;
     }
 
     const best = scoredCandidates[0];
     const second = scoredCandidates[1];
     const isAmbiguous = second !== undefined && best.score - second.score < AMBIGUOUS_GAP;
+
+    console.log(
+      `[COMPARE][MATCH] chain=${chainId} item="${item.name}" normalized="${normalizedInput}" candidates=${candidates.length} topScores=[${topScores}] selected="${best.product.originalName}" score=${best.score.toFixed(2)} status=${isAmbiguous ? 'ambiguous' : 'matched'}`,
+    );
 
     return {
       shoppingItemId: item.id,
@@ -161,23 +326,6 @@ export class PriceComparisonService {
       isAmbiguous,
     };
   }
-}
-
-function tokenOverlapScore(left: string, right: string): number {
-  const leftTokens = new Set(left.split(' ').filter(Boolean));
-  const rightTokens = new Set(right.split(' ').filter(Boolean));
-  if (leftTokens.size === 0 || rightTokens.size === 0) {
-    return 0;
-  }
-
-  let intersection = 0;
-  for (const token of leftTokens) {
-    if (rightTokens.has(token)) {
-      intersection++;
-    }
-  }
-
-  return intersection / Math.max(leftTokens.size, rightTokens.size);
 }
 
 function pickCheapestChain(chains: ChainBasket[]): ChainId | null {

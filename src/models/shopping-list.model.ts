@@ -31,6 +31,7 @@ export interface ShoppingItem {
   notes?: string;
   priority?: ItemPriority;
   barcode?: string;
+  productId?: string;
   createdAt: Date;
   updatedAt: Date;
   // Matching fields (populated when match-items is triggered)
