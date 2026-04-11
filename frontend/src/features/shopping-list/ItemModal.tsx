@@ -1,6 +1,13 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import Modal from '../../components/Modal';
-import type { ShoppingItem, CreateItemPayload, UpdateItemPayload, ItemPriority } from '../../types';
+import ProductSearchInput from './ProductSearchInput';
+import type {
+  ShoppingItem,
+  CreateItemPayload,
+  UpdateItemPayload,
+  ItemPriority,
+  ProductSearchResult,
+} from '../../types';
 
 interface ItemModalProps {
   isOpen: boolean;
@@ -18,6 +25,7 @@ const PRIORITIES: { value: ItemPriority; label: string }[] = [
 export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalProps) {
   const isEdit = Boolean(item);
 
+  const [selectedProduct, setSelectedProduct] = useState<ProductSearchResult | null>(null);
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [category, setCategory] = useState('');
@@ -35,6 +43,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
       setUnit(item.unit ?? '');
       setNotes(item.notes ?? '');
       setPriority(item.priority ?? 'medium');
+      setSelectedProduct(null);
     } else {
       setName('');
       setQuantity(1);
@@ -42,22 +51,44 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
       setUnit('');
       setNotes('');
       setPriority('medium');
+      setSelectedProduct(null);
     }
     setError('');
   }, [item, isOpen]);
 
+  const handleProductSelect = (product: ProductSearchResult) => {
+    setSelectedProduct(product);
+    setName(product.name);
+    setError('');
+  };
+
+  const handleProductClear = () => {
+    setSelectedProduct(null);
+    setName('');
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // In add mode, require a product selection
+    if (!isEdit && !selectedProduct) {
+      setError('Please select a product from the search results.');
+      return;
+    }
+
     setLoading(true);
     try {
       const payload: CreateItemPayload = {
-        name: name.trim(),
+        name: isEdit ? name.trim() : selectedProduct!.name,
         quantity,
         ...(category && { category: category.trim() }),
         ...(unit && { unit: unit.trim() }),
         ...(notes && { notes: notes.trim() }),
         priority,
+        ...(!isEdit && selectedProduct
+          ? { productId: selectedProduct.id, barcode: selectedProduct.barcode }
+          : {}),
       };
       await onSave(payload);
       onClose();
@@ -84,17 +115,25 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Item name <span className="text-red-500">*</span>
+            {isEdit ? 'Item name' : 'Search product'} <span className="text-red-500">*</span>
           </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            maxLength={80}
-            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-            placeholder="e.g. Olive oil"
-          />
+          {isEdit ? (
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              maxLength={80}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+              placeholder="e.g. Olive oil"
+            />
+          ) : (
+            <ProductSearchInput
+              onSelect={handleProductSelect}
+              selectedProduct={selectedProduct}
+              onClear={handleProductClear}
+            />
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">

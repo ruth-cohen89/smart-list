@@ -26,6 +26,7 @@ export class ChainProductRepository {
     if (data.productType) setFields.productType = data.productType;
     if (data.priceUpdateDate) setFields.priceUpdateDate = data.priceUpdateDate;
     if (data.unitType) setFields.unitType = data.unitType;
+    if (data.imageUrl) setFields.imageUrl = data.imageUrl;
 
     const update: Record<string, unknown> = { $set: setFields };
     if (data.barcode) {

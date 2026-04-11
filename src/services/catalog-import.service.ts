@@ -82,6 +82,12 @@ export class CatalogImportService {
         // Resolve to a global Product (packaged by barcode, produce by catalog)
         const resolved = await this.productResolution.resolve(product);
 
+        // Future image enrichment: the current chain XML feeds do not include
+        // product image URLs. When a source is added that provides images (e.g.
+        // a retailer API or scraper), extract the URL here and pass it as
+        // imageUrl to upsertProduct. Example:
+        //   const imageUrl = product.imageUrl ?? undefined;
+
         await this.chainProductRepo.upsertProduct({
           chainId,
           externalId: product.itemCode,
@@ -94,6 +100,7 @@ export class CatalogImportService {
           lastSeenAt: now,
           productId: resolved?.product.id,
           productType: resolved?.productType,
+          // imageUrl,  // uncomment when source provides images
         });
 
         seenExternalIds.push(product.itemCode);

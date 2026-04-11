@@ -46,6 +46,8 @@ export const updateShoppingListSchema = z
 
 // -------------------- Items --------------------
 
+const productIdSchema = z.string().trim().min(1).max(50);
+
 export const createItemSchema = z
   .object({
     name: itemNameSchema,
@@ -55,6 +57,7 @@ export const createItemSchema = z
     notes: notesSchema.optional(),
     priority: prioritySchema.optional(),
     barcode: barcodeSchema.optional(),
+    productId: productIdSchema.optional(),
     // purchased intentionally omitted (use toggle endpoint instead)
   })
   .strict();

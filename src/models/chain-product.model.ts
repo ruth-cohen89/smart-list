@@ -49,6 +49,7 @@ export interface ChainProduct {
   unitType?: string;
   isActive: boolean;
   lastSeenAt: Date;
+  imageUrl?: string;
   promotions: ProductPromotionSnapshot[];
   hasActivePromotions: boolean;
   lastPromotionSyncAt?: Date;
@@ -70,4 +71,5 @@ export interface UpsertChainProductData {
   quantity?: number;
   unitType?: string;
   lastSeenAt: Date;
+  imageUrl?: string;
 }

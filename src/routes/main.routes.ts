@@ -7,6 +7,8 @@ import receiptsRouter from './receipts.routes';
 import priceComparisonRouter from './price-comparison.routes';
 import catalogImportRouter from './catalog-import.routes';
 import promoImportRouter from './promo-import.routes';
+import productRouter from './product.routes';
+import productGroupRouter from './product-group.routes';
 import healthRouter from './health.routes';
 
 const router = Router();
@@ -19,6 +21,8 @@ router.use('/receipts', receiptsRouter);
 router.use('/price-comparison', priceComparisonRouter);
 router.use('/catalog-import', catalogImportRouter);
 router.use('/promo-import', promoImportRouter);
+router.use('/products', productRouter);
+router.use('/product-groups', productGroupRouter);
 
 router.use('/health', healthRouter);
 

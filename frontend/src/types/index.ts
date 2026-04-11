@@ -93,6 +93,21 @@ export interface CreateItemPayload {
   unit?: string;
   notes?: string;
   priority?: ItemPriority;
+  productId?: string;
+  barcode?: string;
+}
+
+// ─── Product Search ─────────────────────────────────────────────────────────
+
+export interface ProductSearchResult {
+  id: string;
+  name: string;
+  barcode: string;
+  imageUrl?: string;
+}
+
+export interface ProductSearchResponse {
+  results: ProductSearchResult[];
 }
 
 export interface UpdateItemPayload {
@@ -213,6 +228,45 @@ export interface ConfirmedMatch {
 export interface ConfirmMatchesResponse {
   receiptId: string;
   confirmedMatches: ConfirmedMatch[];
+}
+
+// ─── Price Comparison ───────────────────────────────────────────────────────
+
+export type ChainId = 'shufersal' | 'rami-levy' | 'machsanei-hashuk';
+
+export interface MatchedBasketItem {
+  shoppingItemId: string;
+  shoppingItemName: string;
+  itemQuantity: number;
+  matchSource: string;
+  score: number;
+  isAmbiguous: boolean;
+  regularTotalPrice: number;
+  effectiveTotalPrice: number;
+  effectiveUnitPrice: number;
+  appliedPromotion: { description: string } | null;
+  product: {
+    originalName: string;
+    price: number;
+  };
+}
+
+export interface UnmatchedBasketItem {
+  shoppingItemId: string;
+  shoppingItemName: string;
+}
+
+export interface ChainBasket {
+  chainId: ChainId;
+  totalPrice: number;
+  matchedItems: MatchedBasketItem[];
+  unmatchedItems: UnmatchedBasketItem[];
+}
+
+export interface ComparisonResult {
+  chains: ChainBasket[];
+  cheapestChainId: ChainId | null;
+  comparedAt: string;
 }
 
 // ─── API Error ───────────────────────────────────────────────────────────────

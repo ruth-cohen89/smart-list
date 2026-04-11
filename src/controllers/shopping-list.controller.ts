@@ -55,6 +55,11 @@ export class ShoppingListController {
     if (!req.user) throw new AppError('Not authenticated', 401);
 
     const dto = createItemSchema.parse(req.body);
+
+    if (!dto.productId) {
+      throw new AppError('Items must be selected from the product catalog', 400);
+    }
+
     const updated = await this.service.addItemToActiveList(req.user.id, dto);
 
     res.status(200).json(updated);

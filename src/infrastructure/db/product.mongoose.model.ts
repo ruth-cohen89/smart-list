@@ -10,6 +10,9 @@ export interface IProductDocument extends Document {
   category?: string;
   unitType?: 'ק"ג' | 'יחידה';
   isWeighted?: boolean;
+  imageUrl?: string;
+  imageSource?: string;
+  imageStatus?: 'missing' | 'external' | 'cached';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +32,9 @@ const ProductSchema = new Schema<IProductDocument>(
     category: { type: String, trim: true },
     unitType: { type: String, enum: ['ק"ג', 'יחידה'] },
     isWeighted: { type: Boolean },
+    imageUrl: { type: String, trim: true },
+    imageSource: { type: String, trim: true },
+    imageStatus: { type: String, enum: ['missing', 'external', 'cached'] },
   },
   { timestamps: true },
 );

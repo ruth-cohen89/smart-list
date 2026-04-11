@@ -17,6 +17,7 @@ export const mapChainProduct = (doc: IChainProductDocument): ChainProduct => ({
   unitType: doc.unitType,
   isActive: doc.isActive,
   lastSeenAt: doc.lastSeenAt,
+  imageUrl: doc.imageUrl,
   promotions: (doc.promotions ?? []).map((promotion) => ({
     chainId: promotion.chainId,
     promotionId: promotion.promotionId,

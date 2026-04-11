@@ -11,6 +11,7 @@ import ShoppingListPage from './features/shopping-list/ShoppingListPage';
 import ConsumptionProfilePage from './features/consumption-profile/ConsumptionProfilePage';
 import ReceiptsPage from './features/receipts/ReceiptsPage';
 import ReceiptDetailPage from './features/receipts/ReceiptDetailPage';
+import PriceComparisonPage from './features/price-comparison/PriceComparisonPage';
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/consumption-profile" element={<ConsumptionProfilePage />} />
             <Route path="/receipts" element={<ReceiptsPage />} />
             <Route path="/receipts/:receiptId" element={<ReceiptDetailPage />} />
+            <Route path="/price-comparison" element={<PriceComparisonPage />} />
           </Route>
 
           {/* Default redirect */}

@@ -17,6 +17,7 @@ export interface IChainProductDocument extends Document {
   unitType?: string;
   isActive: boolean;
   lastSeenAt: Date;
+  imageUrl?: string;
   promotions: Array<{
     chainId: ChainId;
     promotionId: string;
@@ -102,6 +103,7 @@ const ChainProductSchema = new Schema<IChainProductDocument>(
     unitType: { type: String, trim: true, maxlength: 30 },
     isActive: { type: Boolean, required: true, default: true },
     lastSeenAt: { type: Date, required: true },
+    imageUrl: { type: String, trim: true },
     promotions: { type: [EmbeddedPromotionSchema], default: [] },
     hasActivePromotions: { type: Boolean, required: true, default: false },
     lastPromotionSyncAt: { type: Date },

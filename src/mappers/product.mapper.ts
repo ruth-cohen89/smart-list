@@ -12,6 +12,9 @@ export const mapProduct = (doc: IProductDocument): Product => ({
   category: doc.category,
   unitType: doc.unitType,
   isWeighted: doc.isWeighted,
+  imageUrl: doc.imageUrl,
+  imageSource: doc.imageSource,
+  imageStatus: doc.imageStatus,
   createdAt: doc.createdAt,
   updatedAt: doc.updatedAt,
 });

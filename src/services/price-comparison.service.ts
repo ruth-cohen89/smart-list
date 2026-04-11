@@ -130,7 +130,9 @@ export class PriceComparisonService {
       }
     }
 
-    // 2. Barcode match
+    // 2. Barcode match — strict: if item has a barcode, match by barcode only.
+    //    Do NOT fall back to name matching for barcode items, because a similar
+    //    name can map to a completely different product (wrong size, fat %, etc.).
     if (item.barcode) {
       const barcodeMatches = await this.chainProductRepo.findByBarcode(item.barcode, chainId);
       if (barcodeMatches.length > 0) {
@@ -152,7 +154,16 @@ export class PriceComparisonService {
           isAmbiguous: false,
         };
       }
+
+      // Barcode not found in this chain — return null (unmatched).
+      // No name fallback: accuracy > match count.
+      console.log(
+        `[COMPARE][MATCH] chain=${chainId} item="${item.name}" barcode=${item.barcode} status=unmatched_barcode_not_in_chain`,
+      );
+      return null;
     }
+
+    // ── Below: only items WITHOUT a barcode ──
 
     // 3. Produce catalog match — deterministic, by canonical key
     const produceResult = await this.matchByProduce(item, chainId);
@@ -170,7 +181,7 @@ export class PriceComparisonService {
       }
     }
 
-    // 5. Name matching (fuzzy fallback)
+    // 5. Name matching (fuzzy fallback) — only for non-barcode items
     return this.matchByName(item, chainId);
   }
 

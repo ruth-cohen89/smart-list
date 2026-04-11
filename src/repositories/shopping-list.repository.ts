@@ -136,6 +136,7 @@ export class ShoppingListRepository {
             notes: input.notes,
             priority: input.priority ?? 'medium',
             barcode: input.barcode,
+            ...(input.productId ? { productId: this.toObjectId(input.productId) } : {}),
           },
         },
       },

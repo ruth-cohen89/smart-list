@@ -23,6 +23,7 @@ import { matchProduceCanonical } from '../data/produce-catalog';
 import { normalizeName } from '../utils/normalize';
 import { SUPPORTED_CHAINS } from '../models/chain-product.model';
 import type { ChainId } from '../models/chain-product.model';
+import type { ProductType } from '../models/product.model';
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -126,7 +127,7 @@ async function backfillChain(
     const bulkOps: Array<{
       updateOne: {
         filter: { _id: mongoose.Types.ObjectId };
-        update: { $set: { productId: mongoose.Types.ObjectId; productType: string } };
+        update: { $set: { productId: mongoose.Types.ObjectId; productType: ProductType } };
       };
     }> = [];
 

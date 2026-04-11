@@ -223,6 +223,162 @@ describe('PriceComparisonService — match priority', () => {
     });
   });
 
+  describe('strict barcode matching', () => {
+    it('barcode item found in all chains → matched in all', async () => {
+      const cp = fakeChainProduct({ id: 'cp-bc', barcode: '7290001234567', price: 10 });
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ barcode: '7290001234567' })],
+        chainProductsByBarcode: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+
+      // All 3 chains use the same mock, so all should match by barcode
+      for (const chain of result.chains) {
+        expect(chain.matchedItems).toHaveLength(1);
+        expect(chain.matchedItems[0].matchSource).toBe('barcode');
+        expect(chain.unmatchedItems).toHaveLength(0);
+      }
+    });
+
+    it('barcode item missing in a chain → unmatched, no name fallback', async () => {
+      const cp = fakeChainProduct({ id: 'cp-bc', barcode: '7290001234567', price: 10 });
+      const similarByName = fakeChainProduct({
+        id: 'cp-name-similar',
+        originalName: 'חלב תנובה 1%',
+        normalizedName: 'חלב תנובה 1%',
+        price: 8,
+      });
+
+      // Return barcode match only for shufersal, empty for others
+      const chainProductRepo = {
+        findByProductId: jest.fn().mockResolvedValue([]),
+        findByBarcode: jest.fn().mockImplementation((_barcode: string, chainId: ChainId) => {
+          if (chainId === 'shufersal') return Promise.resolve([cp]);
+          return Promise.resolve([]);
+        }),
+        findCandidatesByName: jest.fn().mockResolvedValue([similarByName]),
+        findByExternalId: jest.fn().mockResolvedValue(null),
+      } as unknown as ChainProductRepository;
+
+      const shoppingListRepo = {
+        getOrCreateActiveList: jest.fn().mockResolvedValue({
+          id: 'list-1',
+          userId: 'user-1',
+          name: 'Active',
+          status: 'active',
+          defaultCategoryOrder: [],
+          items: [fakeShoppingItem({ name: 'חלב תנובה 3%', barcode: '7290001234567' })],
+          createdAt: NOW,
+          updatedAt: NOW,
+        }),
+      } as unknown as ShoppingListRepository;
+
+      const productRepo = {
+        findOrCreateByCanonicalKey: jest.fn().mockResolvedValue(fakeProduct()),
+        findOrCreateByBarcode: jest.fn().mockResolvedValue(fakeProduct()),
+        findByBarcode: jest.fn().mockResolvedValue(null),
+        findByCanonicalKey: jest.fn().mockResolvedValue(null),
+      } as unknown as ProductRepository;
+
+      const service = new PriceComparisonService(shoppingListRepo, chainProductRepo, productRepo);
+      const result = await service.compareActiveList('user-1');
+
+      // Shufersal: matched by barcode
+      const shufersal = result.chains.find((c) => c.chainId === 'shufersal')!;
+      expect(shufersal.matchedItems).toHaveLength(1);
+      expect(shufersal.matchedItems[0].matchSource).toBe('barcode');
+
+      // Other chains: unmatched — must NOT fall back to name matching
+      const ramiLevy = result.chains.find((c) => c.chainId === 'rami-levy')!;
+      expect(ramiLevy.matchedItems).toHaveLength(0);
+      expect(ramiLevy.unmatchedItems).toHaveLength(1);
+
+      const machsanei = result.chains.find((c) => c.chainId === 'machsanei-hashuk')!;
+      expect(machsanei.matchedItems).toHaveLength(0);
+      expect(machsanei.unmatchedItems).toHaveLength(1);
+
+      // Name matching should never be called for a barcode item
+      expect(chainProductRepo.findCandidatesByName).not.toHaveBeenCalled();
+    });
+
+    it('no-barcode item still uses name matching', async () => {
+      const cp = fakeChainProduct({
+        id: 'cp-name',
+        originalName: 'שקית ניילון גדולה',
+        normalizedName: 'שקית ניילון גדולה',
+        price: 3,
+      });
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [
+          fakeShoppingItem({ name: 'שקית ניילון', rawName: 'שקית ניילון' }),
+        ],
+        chainProductsByName: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const matched = result.chains[0].matchedItems;
+
+      expect(matched).toHaveLength(1);
+      expect(matched[0].matchSource).toBe('name');
+      expect(chainProductRepo.findCandidatesByName).toHaveBeenCalled();
+    });
+
+    it('totalPrice excludes unmatched barcode items', async () => {
+      const matchedCp = fakeChainProduct({ id: 'cp-1', barcode: '1111', price: 15 });
+      const otherCp = fakeChainProduct({
+        id: 'cp-name',
+        originalName: 'שקית ניילון',
+        normalizedName: 'שקית ניילון',
+        price: 99,
+      });
+
+      const chainProductRepo = {
+        findByProductId: jest.fn().mockResolvedValue([]),
+        findByBarcode: jest.fn().mockImplementation((barcode: string) => {
+          if (barcode === '1111') return Promise.resolve([matchedCp]);
+          return Promise.resolve([]);
+        }),
+        findCandidatesByName: jest.fn().mockResolvedValue([otherCp]),
+        findByExternalId: jest.fn().mockResolvedValue(null),
+      } as unknown as ChainProductRepository;
+
+      const shoppingListRepo = {
+        getOrCreateActiveList: jest.fn().mockResolvedValue({
+          id: 'list-1',
+          userId: 'user-1',
+          name: 'Active',
+          status: 'active',
+          defaultCategoryOrder: [],
+          items: [
+            fakeShoppingItem({ id: 'i1', name: 'Item A', barcode: '1111', quantity: 1 }),
+            fakeShoppingItem({ id: 'i2', name: 'Item B', barcode: '9999', quantity: 1 }),
+          ],
+          createdAt: NOW,
+          updatedAt: NOW,
+        }),
+      } as unknown as ShoppingListRepository;
+
+      const productRepo = {
+        findOrCreateByCanonicalKey: jest.fn().mockResolvedValue(fakeProduct()),
+        findOrCreateByBarcode: jest.fn().mockResolvedValue(fakeProduct()),
+        findByBarcode: jest.fn().mockResolvedValue(null),
+        findByCanonicalKey: jest.fn().mockResolvedValue(null),
+      } as unknown as ProductRepository;
+
+      const service = new PriceComparisonService(shoppingListRepo, chainProductRepo, productRepo);
+      const result = await service.compareActiveList('user-1');
+
+      for (const chain of result.chains) {
+        // Only item A (barcode 1111) is matched; item B (barcode 9999) is unmatched
+        expect(chain.matchedItems).toHaveLength(1);
+        expect(chain.unmatchedItems).toHaveLength(1);
+        // totalPrice should only include matched item (price=15), not the 99-priced name match
+        expect(chain.totalPrice).toBe(15);
+      }
+    });
+  });
+
   describe('cheapest chain selection', () => {
     it('picks the chain with lowest total', async () => {
       const cp = fakeChainProduct({ price: 5 });
