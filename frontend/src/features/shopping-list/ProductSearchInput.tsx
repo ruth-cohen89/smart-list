@@ -1,76 +1,60 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { productService } from '../../services/productService';
-import type { ProductSearchResult } from '../../types';
+import { productGroupService } from '../../services/productGroupService';
+import type {
+  ProductGroupResult,
+  ProductVariantResult,
+  GroupMappingResult,
+} from '../../types';
 import Spinner from '../../components/Spinner';
 
-function ProductThumb({ imageUrl, size = 28 }: { imageUrl?: string; size?: number }) {
-  if (imageUrl) {
-    return (
-      <img
-        src={imageUrl}
-        alt=""
-        width={size}
-        height={size}
-        className="rounded object-cover flex-shrink-0 bg-gray-100"
-        onError={(e) => {
-          // On load failure, replace with placeholder
-          (e.target as HTMLImageElement).style.display = 'none';
-          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-        }}
-      />
-    );
-  }
-  return (
-    <div
-      className="rounded bg-gray-100 flex items-center justify-center flex-shrink-0"
-      style={{ width: size, height: size }}
-    >
-      <svg
-        className="text-gray-300"
-        width={size * 0.6}
-        height={size * 0.6}
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={1.5}
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z"
-        />
-      </svg>
-    </div>
-  );
+// ─── Selection value passed up to ItemModal ─────────────────────────────────
+
+export interface GroupSelection {
+  groupId: string;
+  groupName: string;
+  category: string;
+  variantId?: string;
+  variantName?: string;
+  mapping: GroupMappingResult;
 }
 
 interface ProductSearchInputProps {
-  onSelect: (product: ProductSearchResult) => void;
-  selectedProduct: ProductSearchResult | null;
+  onSelect: (selection: GroupSelection) => void;
+  selection: GroupSelection | null;
   onClear: () => void;
 }
 
 export default function ProductSearchInput({
   onSelect,
-  selectedProduct,
+  selection,
   onClear,
 }: ProductSearchInputProps) {
+  // ─── Search state ───────────────────────────────────────────────
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<ProductSearchResult[]>([]);
+  const [groups, setGroups] = useState<ProductGroupResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+
+  // ─── Variant picker state ───────────────────────────────────────
+  const [pickedGroup, setPickedGroup] = useState<ProductGroupResult | null>(null);
+  const [variants, setVariants] = useState<ProductVariantResult[]>([]);
+  const [loadingVariants, setLoadingVariants] = useState(false);
+
+  // ─── Mapping state ──────────────────────────────────────────────
+  const [loadingMapping, setLoadingMapping] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Debounced search
+  // ─── Debounced search ───────────────────────────────────────────
+
   const doSearch = useCallback((q: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (q.trim().length < 2) {
-      setResults([]);
+      setGroups([]);
       setOpen(false);
       setLoading(false);
       return;
@@ -79,12 +63,12 @@ export default function ProductSearchInput({
     setLoading(true);
     debounceRef.current = setTimeout(async () => {
       try {
-        const data = await productService.search(q.trim());
-        setResults(data.results);
+        const data = await productGroupService.searchGroups(q.trim());
+        setGroups(data.results);
         setOpen(data.results.length > 0 || q.trim().length >= 2);
         setActiveIndex(-1);
       } catch {
-        setResults([]);
+        setGroups([]);
       } finally {
         setLoading(false);
       }
@@ -108,47 +92,127 @@ export default function ProductSearchInput({
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const handleChange = (value: string) => {
-    setQuery(value);
-    doSearch(value);
+  // ─── Group selected → fetch variants ────────────────────────────
+
+  const handleGroupSelect = async (group: ProductGroupResult) => {
+    setQuery('');
+    setGroups([]);
+    setOpen(false);
+
+    setPickedGroup(group);
+    setLoadingVariants(true);
+    try {
+      const data = await productGroupService.getVariants(group.id);
+      if (data.variants.length > 0) {
+        setVariants(data.variants);
+        // Wait for user to pick a variant
+      } else {
+        // No variants — go straight to mapping
+        await finishSelection(group);
+      }
+    } catch {
+      // Fallback: proceed without variants
+      await finishSelection(group);
+    } finally {
+      setLoadingVariants(false);
+    }
   };
 
-  const handleSelect = (product: ProductSearchResult) => {
-    onSelect(product);
-    setQuery('');
-    setResults([]);
-    setOpen(false);
+  // ─── Variant selected ──────────────────────────────────────────
+
+  const handleVariantSelect = async (variant: ProductVariantResult) => {
+    if (!pickedGroup) return;
+    setVariants([]);
+    await finishSelection(pickedGroup, variant);
   };
+
+  // Skip variants — user wants no specific variant
+  const handleSkipVariants = async () => {
+    if (!pickedGroup) return;
+    setVariants([]);
+    await finishSelection(pickedGroup);
+  };
+
+  // ─── Run mapping and emit result ───────────────────────────────
+
+  const finishSelection = async (
+    group: ProductGroupResult,
+    variant?: ProductVariantResult,
+  ) => {
+    setLoadingMapping(true);
+    try {
+      const mapping = await productGroupService.mapGroup(group.id, variant?.id);
+      onSelect({
+        groupId: group.id,
+        groupName: group.name,
+        category: group.category,
+        variantId: variant?.id,
+        variantName: variant?.name,
+        mapping,
+      });
+    } catch {
+      // Still emit selection even if mapping fails
+      onSelect({
+        groupId: group.id,
+        groupName: group.name,
+        category: group.category,
+        variantId: variant?.id,
+        variantName: variant?.name,
+        mapping: {
+          group: { id: group.id, name: group.name, category: group.category },
+          results: {},
+        },
+      });
+    } finally {
+      setLoadingMapping(false);
+      setPickedGroup(null);
+    }
+  };
+
+  // ─── Clear everything ──────────────────────────────────────────
+
+  const handleClear = () => {
+    setPickedGroup(null);
+    setVariants([]);
+    setQuery('');
+    onClear();
+  };
+
+  // ─── Keyboard navigation ──────────────────────────────────────
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!open || results.length === 0) return;
+    if (!open || groups.length === 0) return;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0));
+      setActiveIndex((prev) => (prev < groups.length - 1 ? prev + 1 : 0));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setActiveIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1));
+      setActiveIndex((prev) => (prev > 0 ? prev - 1 : groups.length - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (activeIndex >= 0 && activeIndex < results.length) {
-        handleSelect(results[activeIndex]);
+      if (activeIndex >= 0 && activeIndex < groups.length) {
+        handleGroupSelect(groups[activeIndex]);
       }
     } else if (e.key === 'Escape') {
       setOpen(false);
     }
   };
 
-  // If a product is already selected, show it as a chip
-  if (selectedProduct) {
+  // ─── Render: already selected ──────────────────────────────────
+
+  if (selection) {
+    const label = selection.variantName
+      ? `${selection.groupName} — ${selection.variantName}`
+      : selection.groupName;
+
     return (
       <div className="flex items-center gap-2 w-full px-4 py-2.5 border border-brand-200 bg-brand-50 rounded-xl text-sm">
-        <ProductThumb imageUrl={selectedProduct.imageUrl} size={24} />
-        <span className="flex-1 font-medium text-brand-800">{selectedProduct.name}</span>
-        <span className="text-xs text-brand-400">{selectedProduct.barcode}</span>
+        <span className="flex-1 font-medium text-brand-800">{label}</span>
+        <span className="text-xs text-brand-400">{selection.category}</span>
         <button
           type="button"
-          onClick={onClear}
+          onClick={handleClear}
           className="text-brand-400 hover:text-brand-600 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -164,6 +228,63 @@ export default function ProductSearchInput({
     );
   }
 
+  // ─── Render: loading mapping ───────────────────────────────────
+
+  if (loadingMapping) {
+    return (
+      <div className="flex items-center justify-center gap-2 w-full px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-500">
+        <Spinner size="sm" />
+        <span>Finding best products…</span>
+      </div>
+    );
+  }
+
+  // ─── Render: variant picker ────────────────────────────────────
+
+  if (pickedGroup && (loadingVariants || variants.length > 0)) {
+    return (
+      <div className="border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700">{pickedGroup.name}</span>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Change
+          </button>
+        </div>
+        {loadingVariants ? (
+          <div className="flex items-center justify-center px-4 py-3">
+            <Spinner size="sm" />
+          </div>
+        ) : (
+          <div className="max-h-48 overflow-y-auto">
+            <button
+              type="button"
+              onClick={handleSkipVariants}
+              className="w-full text-right px-4 py-2.5 text-sm hover:bg-brand-50 transition-colors text-gray-500"
+            >
+              Any variant
+            </button>
+            {variants.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => handleVariantSelect(v)}
+                className="w-full text-right px-4 py-2.5 text-sm hover:bg-brand-50 transition-colors font-medium text-gray-900"
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Render: search input ──────────────────────────────────────
+
   return (
     <div ref={containerRef} className="relative">
       <div className="relative">
@@ -171,13 +292,16 @@ export default function ProductSearchInput({
           ref={inputRef}
           type="text"
           value={query}
-          onChange={(e) => handleChange(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            doSearch(e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           onFocus={() => {
-            if (results.length > 0) setOpen(true);
+            if (groups.length > 0) setOpen(true);
           }}
           className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm pr-10"
-          placeholder="Search for a product..."
+          placeholder="Search for a product…"
         />
         {loading && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -188,21 +312,20 @@ export default function ProductSearchInput({
 
       {open && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-          {results.length === 0 && !loading && query.trim().length >= 2 && (
+          {groups.length === 0 && !loading && query.trim().length >= 2 && (
             <div className="px-4 py-3 text-sm text-gray-400">No results found</div>
           )}
-          {results.map((product, index) => (
+          {groups.map((group, index) => (
             <button
-              key={product.id}
+              key={group.id}
               type="button"
-              onClick={() => handleSelect(product)}
+              onClick={() => handleGroupSelect(group)}
               className={`w-full text-right px-4 py-2.5 text-sm hover:bg-brand-50 transition-colors flex items-center gap-2 ${
                 index === activeIndex ? 'bg-brand-50' : ''
-              } ${index === 0 ? 'rounded-t-xl' : ''} ${index === results.length - 1 ? 'rounded-b-xl' : ''}`}
+              } ${index === 0 ? 'rounded-t-xl' : ''} ${index === groups.length - 1 ? 'rounded-b-xl' : ''}`}
             >
-              <ProductThumb imageUrl={product.imageUrl} size={28} />
-              <span className="font-medium text-gray-900 truncate flex-1">{product.name}</span>
-              <span className="text-xs text-gray-400 flex-shrink-0">{product.barcode}</span>
+              <span className="font-medium text-gray-900 truncate flex-1">{group.name}</span>
+              <span className="text-xs text-gray-400 flex-shrink-0">{group.category}</span>
             </button>
           ))}
         </div>

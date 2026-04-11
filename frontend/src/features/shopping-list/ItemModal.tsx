@@ -1,12 +1,11 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import Modal from '../../components/Modal';
-import ProductSearchInput from './ProductSearchInput';
+import ProductSearchInput, { type GroupSelection } from './ProductSearchInput';
 import type {
   ShoppingItem,
   CreateItemPayload,
   UpdateItemPayload,
   ItemPriority,
-  ProductSearchResult,
 } from '../../types';
 
 interface ItemModalProps {
@@ -22,10 +21,29 @@ const PRIORITIES: { value: ItemPriority; label: string }[] = [
   { value: 'high', label: 'High' },
 ];
 
+/**
+ * Pick the single best mapped product from the mapping result.
+ * Strategy: highest score, then lowest price across all chains.
+ */
+function pickBestCandidate(mapping: GroupSelection['mapping']) {
+  let best: { chainProductId: string; barcode?: string; price: number; score: number } | null =
+    null;
+
+  for (const matches of Object.values(mapping.results)) {
+    for (const m of matches) {
+      if (!best || m.score > best.score || (m.score === best.score && m.price < best.price)) {
+        best = { chainProductId: m.chainProductId, barcode: m.barcode, price: m.price, score: m.score };
+      }
+    }
+  }
+
+  return best;
+}
+
 export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalProps) {
   const isEdit = Boolean(item);
 
-  const [selectedProduct, setSelectedProduct] = useState<ProductSearchResult | null>(null);
+  const [selection, setSelection] = useState<GroupSelection | null>(null);
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [category, setCategory] = useState('');
@@ -43,7 +61,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
       setUnit(item.unit ?? '');
       setNotes(item.notes ?? '');
       setPriority(item.priority ?? 'medium');
-      setSelectedProduct(null);
+      setSelection(null);
     } else {
       setName('');
       setQuantity(1);
@@ -51,44 +69,55 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
       setUnit('');
       setNotes('');
       setPriority('medium');
-      setSelectedProduct(null);
+      setSelection(null);
     }
     setError('');
   }, [item, isOpen]);
 
-  const handleProductSelect = (product: ProductSearchResult) => {
-    setSelectedProduct(product);
-    setName(product.name);
+  const handleGroupSelect = (sel: GroupSelection) => {
+    setSelection(sel);
+    const displayName = sel.variantName
+      ? `${sel.groupName} — ${sel.variantName}`
+      : sel.groupName;
+    setName(displayName);
+    if (sel.category && !category) {
+      setCategory(sel.category);
+    }
     setError('');
   };
 
-  const handleProductClear = () => {
-    setSelectedProduct(null);
+  const handleClear = () => {
+    setSelection(null);
     setName('');
+    setCategory('');
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // In add mode, require a product selection
-    if (!isEdit && !selectedProduct) {
+    // In add mode, require a group selection
+    if (!isEdit && !selection) {
       setError('Please select a product from the search results.');
       return;
     }
 
     setLoading(true);
     try {
+      const best = selection ? pickBestCandidate(selection.mapping) : null;
+
       const payload: CreateItemPayload = {
-        name: isEdit ? name.trim() : selectedProduct!.name,
+        name: isEdit ? name.trim() : (selection
+          ? (selection.variantName
+              ? `${selection.groupName} — ${selection.variantName}`
+              : selection.groupName)
+          : name.trim()),
         quantity,
         ...(category && { category: category.trim() }),
         ...(unit && { unit: unit.trim() }),
         ...(notes && { notes: notes.trim() }),
         priority,
-        ...(!isEdit && selectedProduct
-          ? { productId: selectedProduct.id, barcode: selectedProduct.barcode }
-          : {}),
+        ...(best?.barcode ? { barcode: best.barcode } : {}),
       };
       await onSave(payload);
       onClose();
@@ -129,9 +158,9 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
             />
           ) : (
             <ProductSearchInput
-              onSelect={handleProductSelect}
-              selectedProduct={selectedProduct}
-              onClear={handleProductClear}
+              onSelect={handleGroupSelect}
+              selection={selection}
+              onClear={handleClear}
             />
           )}
         </div>

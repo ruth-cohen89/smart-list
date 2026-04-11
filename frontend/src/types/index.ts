@@ -97,7 +97,7 @@ export interface CreateItemPayload {
   barcode?: string;
 }
 
-// ─── Product Search ─────────────────────────────────────────────────────────
+// ─── Product Search (legacy — kept for type compat) ─────────────────────────
 
 export interface ProductSearchResult {
   id: string;
@@ -108,6 +108,42 @@ export interface ProductSearchResult {
 
 export interface ProductSearchResponse {
   results: ProductSearchResult[];
+}
+
+// ─── Product Groups ─────────────────────────────────────────────────────────
+
+export interface ProductGroupResult {
+  id: string;
+  name: string;
+  category: string;
+}
+
+export interface ProductGroupSearchResponse {
+  results: ProductGroupResult[];
+}
+
+export interface ProductVariantResult {
+  id: string;
+  name: string;
+}
+
+export interface ProductVariantsResponse {
+  variants: ProductVariantResult[];
+}
+
+export interface ChainMatch {
+  chainProductId: string;
+  name: string;
+  normalizedName: string;
+  price: number;
+  barcode?: string;
+  score: number;
+}
+
+export interface GroupMappingResult {
+  group: { id: string; name: string; category: string };
+  variant?: { id: string; name: string };
+  results: Record<string, ChainMatch[]>;
 }
 
 export interface UpdateItemPayload {
