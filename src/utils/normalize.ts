@@ -31,10 +31,15 @@ const PERCENT_RE = /(\d+)\s*(?:אחוז|%)/g;
 
 /**
  * Heavier normalization for product matching.
- * - Runs base normalization first
  * - Strips stopwords (marketing fluff)
  * - Normalizes units (ק"ג → kg, ליטר → liter, etc.)
  * - Normalizes percentages (3 אחוז → 3%)
+ * - Keeps `%` so "3%" and "1%" remain distinct tokens and don't
+ *   false-match bare numbers like "1" in "1 ליטר".
+ *
+ * IMPORTANT: score candidates using `normalizeForMatching(originalName)`,
+ * not `normalizeForMatching(normalizedName)`, because `normalizeName` already
+ * stripped the `%` character.
  */
 export const normalizeForMatching = (text: string): string => {
   if (!text) return '';
@@ -48,10 +53,10 @@ export const normalizeForMatching = (text: string): string => {
     s = s.replace(re, replacement);
   }
 
-  // Percentages
+  // Percentages — normalize "3 אחוז" → "3%"
   s = s.replace(PERCENT_RE, '$1%');
 
-  // Now run the standard normalization pipeline
+  // Standard normalization pipeline — keep `%` so percentage tokens survive
   s = s
     .replace(/["'`׳״]/g, '')
     .replace(/[^\p{L}\p{N}%\s]/gu, ' ')
@@ -67,7 +72,7 @@ export const normalizeForMatching = (text: string): string => {
 
 /**
  * Tokenize a normalized string into meaningful tokens.
- * Filters out single-char tokens (except digits/%).
+ * Filters out single-char tokens (except digits and digit+%).
  */
 export const tokenize = (normalized: string): string[] =>
   normalized

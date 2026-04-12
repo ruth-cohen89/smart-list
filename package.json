@@ -14,7 +14,8 @@
     "test": "jest",
     "format": "prettier . --write",
     "lint": "eslint . --ext .ts",
-    "lint:fix": "eslint . --ext .ts --fix"
+    "lint:fix": "eslint . --ext .ts --fix",
+    "seed:product-groups": "ts-node src/scripts/seed-product-groups.ts"
   },
   "author": "Ruth Cohen",
   "license": "MIT",

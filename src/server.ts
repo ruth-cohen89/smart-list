@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { createApp } from './app';
 import { connectMongo } from './infrastructure/db/mongo';
 import mongoose from 'mongoose';
+import ProductGroupMongoose from './infrastructure/db/product-group.mongoose.model';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config({ path: '.env.development' });
@@ -16,6 +17,17 @@ const startServer = async () => {
     await connectMongo();
     console.log('Mongo DB:', mongoose.connection.name);
     console.log('Mongo host:', mongoose.connection.host);
+    // Warn if productGroups collection is empty (seed not run)
+    if (process.env.NODE_ENV !== 'production') {
+      const groupCount = await ProductGroupMongoose.estimatedDocumentCount();
+      if (groupCount === 0) {
+        console.warn(
+          '\n⚠  productGroups collection is empty! Product search will return no results.\n' +
+          '   Run:  npm run seed:product-groups\n',
+        );
+      }
+    }
+
     const app = createApp();
 
     const server = app.listen(PORT, HOST, () => {

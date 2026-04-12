@@ -31,7 +31,9 @@ export class ProductGroupRepository {
   async create(data: {
     name: string;
     normalizedName: string;
+    department?: string;
     category: string;
+    selectionMode?: 'canonical' | 'sku';
     keywords: string[];
     normalizedKeywords: string[];
     includeKeywords?: string[];
@@ -44,7 +46,9 @@ export class ProductGroupRepository {
   async upsertByName(data: {
     name: string;
     normalizedName: string;
+    department?: string;
     category: string;
+    selectionMode?: 'canonical' | 'sku';
     keywords: string[];
     normalizedKeywords: string[];
     includeKeywords?: string[];

@@ -56,7 +56,7 @@ export class ShoppingListController {
 
     const dto = createItemSchema.parse(req.body);
 
-    if (!dto.productId) {
+    if (!dto.productId && !dto.productGroupId) {
       throw new AppError('Items must be selected from the product catalog', 400);
     }
 

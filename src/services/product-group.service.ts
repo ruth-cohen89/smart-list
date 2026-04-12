@@ -29,7 +29,7 @@ export interface ChainMatch {
 }
 
 export interface GroupMappingResult {
-  group: { id: string; name: string; category: string };
+  group: { id: string; name: string; department: string; category: string; selectionMode: string };
   variant?: { id: string; name: string };
   results: Record<string, ChainMatch[]>;
 }
@@ -103,12 +103,20 @@ export class ProductGroupService {
       return this.buildResult(group, variant, {});
     }
 
+    // Use only include tokens for the DB query — general tokens are too
+    // broad and crowd out relevant candidates within the result limit.
+    // Strip `%` for the DB query because normalizedName was built with
+    // normalizeName() which removes `%`.
+    const dbQueryTokens = rules.includeTokens.length > 0
+      ? rules.includeTokens.map((t) => t.replace(/%/g, ''))
+      : rules.searchTokens.map((t) => t.replace(/%/g, ''));
+
     // Query each chain in parallel
     const chainResults: Record<string, ChainMatch[]> = {};
 
     await Promise.all(
       SUPPORTED_CHAINS.map(async (chainId) => {
-        const candidates = await this.findCandidatesForChain(chainId, rules.searchTokens);
+        const candidates = await this.findCandidatesForChain(chainId, dbQueryTokens);
         const scored = this.scoreAndRank(candidates, rules);
         if (scored.length > 0) {
           chainResults[chainId] = scored.slice(0, RESULTS_PER_CHAIN);
@@ -184,10 +192,15 @@ export class ProductGroupService {
     chainId: ChainId,
     tokens: string[],
   ): Promise<ChainProduct[]> {
-    const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const regexPattern = escaped.length === 1 ? escaped[0] : `(${escaped.join('|')})`;
+    // Pass tokens as a space-joined string — the repository handles
+    // tokenization and regex construction itself.
+    const queryName = tokens.join(' ');
 
-    return this.chainProductRepo.findCandidatesByName(regexPattern, chainId);
+    console.log(`[ProductGroupService] findCandidates chainId=${chainId} tokens=[${tokens.join(', ')}]`);
+    const candidates = await this.chainProductRepo.findCandidatesByName(queryName, chainId);
+    console.log(`[ProductGroupService] chainId=${chainId} candidates=${candidates.length}`);
+
+    return candidates;
   }
 
   // ─── Private: score and rank candidates ───────────────────────────
@@ -196,11 +209,12 @@ export class ProductGroupService {
     const scored: ChainMatch[] = [];
 
     for (const cp of candidates) {
-      // Normalize the candidate name with the same pipeline
-      const normalized = normalizeForMatching(cp.normalizedName);
+      // Normalize from originalName so percentage signs (3%) are preserved
+      // through normalizeForMatching — cp.normalizedName already had them stripped.
+      const normalized = normalizeForMatching(cp.originalName);
       const candidateTokens = new Set(tokenize(normalized));
 
-      const score = this.computeScore(candidateTokens, rules);
+      const score = this.computeScore(candidateTokens, normalized, rules);
 
       if (score >= MIN_SCORE) {
         scored.push({
@@ -217,36 +231,49 @@ export class ProductGroupService {
     // Sort by score desc, then price asc for tie-breaking
     scored.sort((a, b) => b.score - a.score || a.price - b.price);
 
+    if (scored.length > 0) {
+      const top = scored.slice(0, 3);
+      console.log(
+        `[ProductGroupService] top matches: ${top.map((m) => `"${m.name}" score=${m.score} price=${m.price}`).join(', ')}`,
+      );
+    }
+
     return scored;
   }
 
-  private computeScore(candidateTokens: Set<string>, rules: MatchingRules): number {
-    // Check excludes first — any exclude token found disqualifies immediately
+  private computeScore(
+    candidateTokens: Set<string>,
+    candidateText: string,
+    rules: MatchingRules,
+  ): number {
+    // ── Exclude check ──────────────────────────────────────────────
+    // Use substring matching on the full normalized text so that
+    // "שוקולד" catches compounds like "שוק.חלב" or "חלבון".
     for (const token of rules.excludeTokens) {
-      if (candidateTokens.has(token)) {
-        return EXCLUDE_PENALTY; // Hard disqualify
-      }
+      // Exact token match
+      if (candidateTokens.has(token)) return EXCLUDE_PENALTY;
+      // Substring match — catches partial/compound forms
+      if (candidateText.includes(token)) return EXCLUDE_PENALTY;
     }
 
+    // ── Include check — ALL tokens must match ──────────────────────
+    // Use both exact token match and substring match on the full text
+    // to handle Hebrew singular/plural (עגבני → עגבניות/עגבניה).
     let score = 0;
-
-    // Include keywords: +2 each
-    let includeHits = 0;
-    for (const token of rules.includeTokens) {
-      if (candidateTokens.has(token)) {
-        score += INCLUDE_WEIGHT;
-        includeHits++;
+    if (rules.includeTokens.length > 0) {
+      for (const token of rules.includeTokens) {
+        if (candidateTokens.has(token) || candidateText.includes(token)) {
+          score += INCLUDE_WEIGHT;
+        } else {
+          // Missing any include token → disqualify
+          return 0;
+        }
       }
     }
 
-    // Require at least half of include tokens to match
-    if (rules.includeTokens.length > 0 && includeHits < Math.ceil(rules.includeTokens.length / 2)) {
-      return 0;
-    }
-
-    // General keywords: +1 each
+    // ── General keywords: +1 each ─────────────────────────────────
     for (const token of rules.generalTokens) {
-      if (candidateTokens.has(token)) {
+      if (candidateTokens.has(token) || candidateText.includes(token)) {
         score += GENERAL_WEIGHT;
       }
     }
@@ -262,7 +289,7 @@ export class ProductGroupService {
     results: Record<string, ChainMatch[]>,
   ): GroupMappingResult {
     return {
-      group: { id: group.id, name: group.name, category: group.category },
+      group: { id: group.id, name: group.name, department: group.department, category: group.category, selectionMode: group.selectionMode },
       ...(variant ? { variant: { id: variant.id, name: variant.name } } : {}),
       results,
     };

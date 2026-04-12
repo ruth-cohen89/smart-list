@@ -98,7 +98,11 @@ export class ChainProductRepository {
       tokens.push(escaped);
     }
 
-    const regexPattern = tokens.length === 1 ? tokens[0] : `(${tokens.join('|')})`;
+    // Use AND-based matching: require ALL tokens via lookaheads.
+    // This drastically reduces false-positive candidates.
+    const regexPattern = tokens.length === 1
+      ? tokens[0]
+      : tokens.map((t) => `(?=.*${t})`).join('');
 
     const docs = await ChainProductMongoose.find({
       chainId,

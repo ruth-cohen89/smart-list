@@ -12,7 +12,15 @@ export class ProductGroupController {
     const q = typeof req.query.q === 'string' ? req.query.q : '';
     const results = await this.service.search(q);
 
-    res.status(200).json({ results });
+    res.status(200).json({
+      results: results.map((g) => ({
+        id: g.id,
+        name: g.name,
+        department: g.department,
+        category: g.category,
+        selectionMode: g.selectionMode,
+      })),
+    });
   });
 
   listAll = catchAsync(async (req: Request, res: Response) => {

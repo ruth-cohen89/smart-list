@@ -95,6 +95,8 @@ export interface CreateItemPayload {
   priority?: ItemPriority;
   productId?: string;
   barcode?: string;
+  productGroupId?: string;
+  variantId?: string;
 }
 
 // ─── Product Search (legacy — kept for type compat) ─────────────────────────
@@ -112,10 +114,14 @@ export interface ProductSearchResponse {
 
 // ─── Product Groups ─────────────────────────────────────────────────────────
 
+export type SelectionMode = 'canonical' | 'sku';
+
 export interface ProductGroupResult {
   id: string;
   name: string;
+  department: string;
   category: string;
+  selectionMode: SelectionMode;
 }
 
 export interface ProductGroupSearchResponse {
@@ -141,7 +147,7 @@ export interface ChainMatch {
 }
 
 export interface GroupMappingResult {
-  group: { id: string; name: string; category: string };
+  group: { id: string; name: string; department: string; category: string; selectionMode: SelectionMode };
   variant?: { id: string; name: string };
   results: Record<string, ChainMatch[]>;
 }

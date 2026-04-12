@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { productGroupService } from '../../services/productGroupService';
+import { productService } from '../../services/productService';
 import type {
   ProductGroupResult,
   ProductVariantResult,
+  ProductSearchResult,
   GroupMappingResult,
+  SelectionMode,
 } from '../../types';
 import Spinner from '../../components/Spinner';
 
@@ -13,25 +16,34 @@ export interface GroupSelection {
   groupId: string;
   groupName: string;
   category: string;
+  selectionMode: SelectionMode;
   variantId?: string;
   variantName?: string;
   mapping: GroupMappingResult;
 }
 
+export interface FallbackSelection {
+  name: string;
+  barcode?: string;
+}
+
 interface ProductSearchInputProps {
   onSelect: (selection: GroupSelection) => void;
-  selection: GroupSelection | null;
+  onFallbackSelect?: (selection: FallbackSelection) => void;
   onClear: () => void;
+  disabled?: boolean;
 }
 
 export default function ProductSearchInput({
   onSelect,
-  selection,
+  onFallbackSelect,
   onClear,
+  disabled,
 }: ProductSearchInputProps) {
   // ─── Search state ───────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [groups, setGroups] = useState<ProductGroupResult[]>([]);
+  const [fallbackResults, setFallbackResults] = useState<ProductSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -55,6 +67,7 @@ export default function ProductSearchInput({
 
     if (q.trim().length < 2) {
       setGroups([]);
+      setFallbackResults([]);
       setOpen(false);
       setLoading(false);
       return;
@@ -65,15 +78,27 @@ export default function ProductSearchInput({
       try {
         const data = await productGroupService.searchGroups(q.trim());
         setGroups(data.results);
-        setOpen(data.results.length > 0 || q.trim().length >= 2);
+        // Fallback: if no groups found, try raw product search
+        if (data.results.length === 0 && onFallbackSelect) {
+          try {
+            const fallback = await productService.search(q.trim());
+            setFallbackResults(fallback.results);
+          } catch {
+            setFallbackResults([]);
+          }
+        } else {
+          setFallbackResults([]);
+        }
+        setOpen(q.trim().length >= 2);
         setActiveIndex(-1);
       } catch {
         setGroups([]);
+        setFallbackResults([]);
       } finally {
         setLoading(false);
       }
     }, 300);
-  }, []);
+  }, [onFallbackSelect]);
 
   useEffect(() => {
     return () => {
@@ -105,13 +130,10 @@ export default function ProductSearchInput({
       const data = await productGroupService.getVariants(group.id);
       if (data.variants.length > 0) {
         setVariants(data.variants);
-        // Wait for user to pick a variant
       } else {
-        // No variants — go straight to mapping
         await finishSelection(group);
       }
     } catch {
-      // Fallback: proceed without variants
       await finishSelection(group);
     } finally {
       setLoadingVariants(false);
@@ -126,7 +148,6 @@ export default function ProductSearchInput({
     await finishSelection(pickedGroup, variant);
   };
 
-  // Skip variants — user wants no specific variant
   const handleSkipVariants = async () => {
     if (!pickedGroup) return;
     setVariants([]);
@@ -146,20 +167,21 @@ export default function ProductSearchInput({
         groupId: group.id,
         groupName: group.name,
         category: group.category,
+        selectionMode: group.selectionMode,
         variantId: variant?.id,
         variantName: variant?.name,
         mapping,
       });
     } catch {
-      // Still emit selection even if mapping fails
       onSelect({
         groupId: group.id,
         groupName: group.name,
         category: group.category,
+        selectionMode: group.selectionMode,
         variantId: variant?.id,
         variantName: variant?.name,
         mapping: {
-          group: { id: group.id, name: group.name, category: group.category },
+          group: { id: group.id, name: group.name, department: group.department, category: group.category, selectionMode: group.selectionMode },
           results: {},
         },
       });
@@ -169,11 +191,22 @@ export default function ProductSearchInput({
     }
   };
 
+  // ─── Fallback product selected ──────────────────────────────────
+
+  const handleFallbackSelect = (product: ProductSearchResult) => {
+    setQuery('');
+    setGroups([]);
+    setFallbackResults([]);
+    setOpen(false);
+    onFallbackSelect?.({ name: product.name, barcode: product.barcode });
+  };
+
   // ─── Clear everything ──────────────────────────────────────────
 
   const handleClear = () => {
     setPickedGroup(null);
     setVariants([]);
+    setFallbackResults([]);
     setQuery('');
     onClear();
   };
@@ -199,42 +232,13 @@ export default function ProductSearchInput({
     }
   };
 
-  // ─── Render: already selected ──────────────────────────────────
-
-  if (selection) {
-    const label = selection.variantName
-      ? `${selection.groupName} — ${selection.variantName}`
-      : selection.groupName;
-
-    return (
-      <div className="flex items-center gap-2 w-full px-4 py-2.5 border border-brand-200 bg-brand-50 rounded-xl text-sm">
-        <span className="flex-1 font-medium text-brand-800">{label}</span>
-        <span className="text-xs text-brand-400">{selection.category}</span>
-        <button
-          type="button"
-          onClick={handleClear}
-          className="text-brand-400 hover:text-brand-600 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
-      </div>
-    );
-  }
-
   // ─── Render: loading mapping ───────────────────────────────────
 
   if (loadingMapping) {
     return (
       <div className="flex items-center justify-center gap-2 w-full px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-500">
         <Spinner size="sm" />
-        <span>Finding best products…</span>
+        <span>Finding products…</span>
       </div>
     );
   }
@@ -300,7 +304,8 @@ export default function ProductSearchInput({
           onFocus={() => {
             if (groups.length > 0) setOpen(true);
           }}
-          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm pr-10"
+          disabled={disabled}
+          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm pr-10 disabled:bg-gray-50 disabled:text-gray-400"
           placeholder="Search for a product…"
         />
         {loading && (
@@ -312,9 +317,6 @@ export default function ProductSearchInput({
 
       {open && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-          {groups.length === 0 && !loading && query.trim().length >= 2 && (
-            <div className="px-4 py-3 text-sm text-gray-400">No results found</div>
-          )}
           {groups.map((group, index) => (
             <button
               key={group.id}
@@ -322,12 +324,36 @@ export default function ProductSearchInput({
               onClick={() => handleGroupSelect(group)}
               className={`w-full text-right px-4 py-2.5 text-sm hover:bg-brand-50 transition-colors flex items-center gap-2 ${
                 index === activeIndex ? 'bg-brand-50' : ''
-              } ${index === 0 ? 'rounded-t-xl' : ''} ${index === groups.length - 1 ? 'rounded-b-xl' : ''}`}
+              } ${index === 0 ? 'rounded-t-xl' : ''} ${index === groups.length - 1 && fallbackResults.length === 0 ? 'rounded-b-xl' : ''}`}
             >
               <span className="font-medium text-gray-900 truncate flex-1">{group.name}</span>
               <span className="text-xs text-gray-400 flex-shrink-0">{group.category}</span>
             </button>
           ))}
+          {/* Fallback: raw product results when no groups match */}
+          {groups.length === 0 && fallbackResults.length > 0 && (
+            <>
+              <div className="px-4 py-2 text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
+                Products
+              </div>
+              {fallbackResults.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => handleFallbackSelect(product)}
+                  className="w-full text-right px-4 py-2.5 text-sm hover:bg-brand-50 transition-colors flex items-center gap-2"
+                >
+                  <span className="font-medium text-gray-900 truncate flex-1">{product.name}</span>
+                  {product.barcode && (
+                    <span className="text-xs text-gray-400 flex-shrink-0 font-mono">{product.barcode}</span>
+                  )}
+                </button>
+              ))}
+            </>
+          )}
+          {groups.length === 0 && fallbackResults.length === 0 && !loading && query.trim().length >= 2 && (
+            <div className="px-4 py-3 text-sm text-gray-400">No results found</div>
+          )}
         </div>
       )}
     </div>
