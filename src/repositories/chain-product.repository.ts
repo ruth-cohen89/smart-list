@@ -8,7 +8,7 @@ import type {
   ProductPromotionSnapshot,
 } from '../models/chain-product.model';
 
-const NAME_CANDIDATE_LIMIT = 80;
+const NAME_CANDIDATE_LIMIT = 200;
 
 export class ChainProductRepository {
   async upsertProduct(data: UpsertChainProductData): Promise<ChainProduct> {
@@ -99,10 +99,13 @@ export class ChainProductRepository {
     }
 
     // Use AND-based matching: require ALL tokens via lookaheads.
-    // This drastically reduces false-positive candidates.
+    // For short numeric tokens (1-2 chars), use word boundaries to avoid
+    // matching digits embedded in longer numbers (e.g. "1" in "112").
+    const wrapToken = (t: string) => /^\d{1,2}$/.test(t) ? `\\b${t}\\b` : t;
+
     const regexPattern = tokens.length === 1
-      ? tokens[0]
-      : tokens.map((t) => `(?=.*${t})`).join('');
+      ? wrapToken(tokens[0])
+      : tokens.map((t) => `(?=.*${wrapToken(t)})`).join('');
 
     const docs = await ChainProductMongoose.find({
       chainId,

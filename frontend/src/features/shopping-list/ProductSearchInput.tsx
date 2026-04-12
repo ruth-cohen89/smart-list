@@ -163,15 +163,60 @@ export default function ProductSearchInput({
     setLoadingMapping(true);
     try {
       const mapping = await productGroupService.mapGroup(group.id, variant?.id);
-      onSelect({
-        groupId: group.id,
-        groupName: group.name,
-        category: group.category,
-        selectionMode: group.selectionMode,
-        variantId: variant?.id,
-        variantName: variant?.name,
-        mapping,
-      });
+      const hasResults = Object.values(mapping.results).some((arr) => arr.length > 0);
+
+      if (hasResults) {
+        onSelect({
+          groupId: group.id,
+          groupName: group.name,
+          category: group.category,
+          selectionMode: group.selectionMode,
+          variantId: variant?.id,
+          variantName: variant?.name,
+          mapping,
+        });
+      } else if (onFallbackSelect) {
+        // Mapping returned 0 products — try raw product search as fallback
+        try {
+          const searchName = variant?.name ?? group.name;
+          const fallback = await productService.search(searchName);
+          if (fallback.results.length > 0) {
+            setFallbackResults(fallback.results);
+            setOpen(true);
+          } else {
+            // No fallback results either — emit group selection anyway
+            onSelect({
+              groupId: group.id,
+              groupName: group.name,
+              category: group.category,
+              selectionMode: group.selectionMode,
+              variantId: variant?.id,
+              variantName: variant?.name,
+              mapping,
+            });
+          }
+        } catch {
+          onSelect({
+            groupId: group.id,
+            groupName: group.name,
+            category: group.category,
+            selectionMode: group.selectionMode,
+            variantId: variant?.id,
+            variantName: variant?.name,
+            mapping,
+          });
+        }
+      } else {
+        onSelect({
+          groupId: group.id,
+          groupName: group.name,
+          category: group.category,
+          selectionMode: group.selectionMode,
+          variantId: variant?.id,
+          variantName: variant?.name,
+          mapping,
+        });
+      }
     } catch {
       onSelect({
         groupId: group.id,
