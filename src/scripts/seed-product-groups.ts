@@ -792,7 +792,7 @@ const SEED_GROUPS: GroupSeed[] = [
     selectionMode: 'canonical',
     keywords: ['קמח', 'לבן', 'רגיל', 'תכליתי'],
     includeKeywords: ['קמח'],
-    excludeKeywords: ['מלא', 'כוסמין', 'שיבולת', 'תירס'],
+    excludeKeywords: ['מלא', 'כוסמין', 'שיבולת', 'תירס', 'שיפון', 'שקדים', 'תופח'],
     priority: 65,
     aliases: ['קמח'],
   },

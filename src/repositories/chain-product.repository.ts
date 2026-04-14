@@ -88,7 +88,7 @@ export class ChainProductRepository {
   async findCandidatesByName(normalizedName: string, chainId: ChainId): Promise<ChainProduct[]> {
     const tokens = normalizedName
       .split(' ')
-      .filter((t) => t.length >= 2)
+      .filter((t) => t.length >= 2 || /^\d+$/.test(t))
       .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); // escape regex chars
 
     if (tokens.length === 0) {
