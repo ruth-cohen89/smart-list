@@ -22,7 +22,7 @@ const STOPWORDS = new Set([
 
 const UNIT_MAP: [RegExp, string][] = [
   [/ק"ג|קילו(?:גרם)?/g, 'kg'],
-  [/גר(?:ם)?/g, 'g'],
+  [/(\d)\s?גר(?:ם)?/g, '$1g'],
   [/ליטר|ל'/g, 'liter'],
   [/מ"ל|מיליליטר/g, 'ml'],
 ];

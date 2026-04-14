@@ -6,10 +6,7 @@ Prefer reusing and extending existing logic when appropriate.
 
 npm run dev
 npm run build
-npm run clean
-npm start
 npm run lint
-npm run lint:fix
 npm run format
 
 ## Architecture
@@ -19,190 +16,85 @@ Route → Controller → Service → Repository → Mongoose Model
 
 Rules:
 
-- Controllers: no business logic
+- Controllers: request/response only, no business logic
 - Services: all business logic
 - Repositories: DB only
 - Services never access Mongoose directly
-- Domain types in src/models (separate from Mongoose)
+- Domain types in `src/models` (separate from Mongoose)
+- Always reuse existing logic instead of duplicating
 
-## Structure
+## Project Structure
 
-- routes → endpoints (/api/v1)
+- routes → `/api/v1` endpoints
 - controllers → req → service → res
 - services → business logic
-- repositories → DB
-- infrastructure → DB, OCR, PDF
+- repositories → persistence
+- infrastructure → DB / OCR / PDF / integrations
 - models → domain types
 - mappers → DB ↔ domain
 - validations → Zod
-- middlewares → auth, validation, errors
-- utils → jwt, normalize
-- errors → AppError + handlers
+- middlewares → auth / validation / errors
+- utils → shared helpers
+- errors → `AppError`
 
-## API (/api/v1)
+## Request & Error Conventions
 
-Auth:
-POST /auth/signup
-POST /auth/login
-POST /auth/forgot-password
-POST /auth/reset-password
-PATCH /auth/change-password
-
-Users:
-GET /users/me
-PATCH /users/me
-
-Shopping List:
-GET /shopping-lists/active
-PATCH /shopping-lists/active
-POST /shopping-lists/active/items
-PATCH /shopping-lists/active/items/:itemId
-DELETE /shopping-lists/active/items/:itemId
-POST /shopping-lists/active/items/:itemId/purchase
-
-Consumption Profile:
-GET /consumption-profile
-PUT /consumption-profile
-POST /consumption-profile/baseline-items
-DELETE /consumption-profile/baseline-items/:itemId
-
-Receipts:
-POST /receipts/upload
-GET /receipts/:receiptId
-POST /receipts/:receiptId/match-items
-POST /receipts/:receiptId/confirm-matches
-
-Health:
-GET /health
-
-## Middleware
-
-- authenticate → JWT → req.user
-- authorize → roles
-- validate-body → Zod
-- validate-object-id → Mongo id
-- catch-async → error forwarding
-
-## Errors
-
-- use AppError
-- global handler handles AppError, JWT, Mongoose
+- `authenticate` → adds `req.user`
+- async controllers wrapped with `catchAsync`
+- use Zod via `validate-body`
+- validate Mongo ids with `validate-object-id`
+- use `AppError` for operational errors
 - never throw raw errors
 
 ## Core Flows
 
-Auth:
-signup → user + empty list → JWT  
-login → verify → JWT  
-protected → JWT + passwordChangedAt check
+### Auth
 
-OCR:
-upload → multer (memory)
+- signup → user + empty shopping list + JWT
+- login → verify + JWT
+- protected routes require JWT + `passwordChangedAt` check
 
-PDF:
+### Shopping List
 
-- try text layer
-- if meaningful → parse (no OCR)
-- else → render 2x → Vision
+- one active list per user
+- CRUD items + purchase flow
+- purchase updates usage and syncs with baseline
 
-Image:
-
-- send directly to Vision
-
-OCR → ReceiptService → detect type → parse
-
-PDF rules:
-
-- max 10 pages
-- skip OCR if >200 chars + price patterns
-
-OCR provider:
-
-- Google Vision (documentTextDetection)
-- credentials: ENV / API key / ADC
-- failure → AppError 502
-
-Parsing:
-
-- parseItemsDigital
-- parseItemsPrimary
-
-Helpers:
-
-- extractMultiplyLine
-- extractDiscountAmount
-- isPromoLine
-- isValidProductName
-- normalizeName
-
-Behavior:
-
-- extract name, quantity, price
-- dedupe with Set
-- add normalizedName
-- status → SCANNED
-
-Matching:
-
-- sources: shopping list + baseline
-
-Thresholds:
-
-- ≥0.9 → autoApproved
-- ≥0.7 → pending
-- else → unmatched
-
-Rules:
-
-- use shouldForcePending
-- auto:
-  - remove from list
-  - update baseline
-- no pending → status APPLIED
-
-Confirm:
-
-- validate ids
-- remove list items
-- update baseline
-- status APPLIED
-
-Shopping List:
-
-- CRUD items
-- purchase → usageScore + lastPurchasedAt
-- sync with baseline
-
-Baseline:
+### Consumption Profile
 
 - created on signup
-- updated via questionnaire / receipts / manual
+- updated via receipts / questionnaire / manual
+
+### Receipts / OCR
+
+- upload via multer (memory)
+- PDFs:
+  - try text layer first
+  - else render pages → Vision OCR
+- images → Vision OCR directly
+- flow:
+  OCR/text → detect type → parse items → match → confirm
+- status: `SCANNED` → `APPLIED`
+
+### Matching
+
+- sources: shopping list + baseline
+- thresholds:
+  - ≥0.9 → auto
+  - ≥0.7 → pending
+  - else → unmatched
+- confirmed/auto:
+  - remove from list
+  - update baseline
 
 ## Domain
 
-Shopping List:
+- Shopping List: 1 active per user
+- Consumption Profile: long-term normalized data
+- Receipt: extracted items (name, normalizedName, price, quantity)
+- Auth: JWT-based, `passwordChangedAt` invalidates tokens
 
-- 1 active per user
-- fields:
-  name, category, quantity, unit, priority, purchased, usageScore, lastPurchasedAt
-
-Consumption Profile:
-
-- fields:
-  name, normalizedName, category, quantity, unit, lastPurchasedAt
-
-Receipt:
-
-- status: SCANNED → APPLIED
-- items:
-  name, normalizedName, quantity, price, category
-
-Auth:
-
-- JWT
-- passwordChangedAt invalidates tokens
-
-## ENV
+## Environment
 
 Required:
 NODE_ENV

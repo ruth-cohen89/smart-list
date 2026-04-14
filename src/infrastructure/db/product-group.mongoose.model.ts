@@ -10,6 +10,8 @@ export interface IProductGroupDocument extends Document {
   normalizedKeywords: string[];
   includeKeywords: string[];
   excludeKeywords: string[];
+  priority: number;
+  aliases: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,6 +27,8 @@ const ProductGroupSchema = new Schema<IProductGroupDocument>(
     normalizedKeywords: { type: [String], default: [] },
     includeKeywords: { type: [String], default: [] },
     excludeKeywords: { type: [String], default: [] },
+    priority: { type: Number, default: 0 },
+    aliases: { type: [String], default: [] },
   },
   { timestamps: true },
 );

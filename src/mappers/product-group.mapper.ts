@@ -12,6 +12,8 @@ export const mapProductGroup = (doc: IProductGroupDocument): ProductGroup => ({
   normalizedKeywords: doc.normalizedKeywords,
   includeKeywords: doc.includeKeywords ?? [],
   excludeKeywords: doc.excludeKeywords ?? [],
+  priority: doc.priority ?? 0,
+  aliases: doc.aliases ?? [],
   createdAt: doc.createdAt,
   updatedAt: doc.updatedAt,
 });

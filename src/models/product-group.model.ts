@@ -11,6 +11,10 @@ export interface ProductGroup {
   normalizedKeywords: string[];
   includeKeywords: string[];
   excludeKeywords: string[];
+  /** 0–100. Higher = shown first in search results. Common staples get high priority. */
+  priority: number;
+  /** Alternative search terms that should match this group (e.g. "חלב" → "חלב 3%") */
+  aliases: string[];
   createdAt: Date;
   updatedAt: Date;
 }

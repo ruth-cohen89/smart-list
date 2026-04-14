@@ -19,6 +19,27 @@ const INCLUDE_WEIGHT = 2;
 const GENERAL_WEIGHT = 1;
 const EXCLUDE_PENALTY = -3;
 
+/** Bonus added per extra chain a barcode appears in (beyond the first) */
+const COVERAGE_BONUS = 1.5;
+
+/** Penalty applied to extra (unrelated) tokens in a candidate name */
+const EXTRA_TOKEN_PENALTY = 1.5;
+
+/** Bonus when an include token appears as the first token in the candidate */
+const POSITION_BONUS = 0.5;
+
+// ─── Global blocklist for food groups ──────────────────────────────────────
+// Applied to all groups in department "מזון" or "משקאות" to prevent
+// cosmetics / hygiene / pet products from contaminating food results.
+const FOOD_DEPARTMENTS = new Set(['מזון', 'משקאות']);
+const FOOD_GLOBAL_EXCLUDES = new Set([
+  'שמפו', 'מרכך', 'סבון', 'קרם', 'תחליב', 'רחצה',
+  'דאודורנט', 'טיפוח', 'לשיער', 'לגוף', 'לפנים',
+  'לידיים', 'מברשת', 'משחת', 'שיניים', 'מגבונים',
+  'חיתולים', 'ניקוי', 'לכביסה',
+  'לחתול', 'לכלב',
+]);
+
 export interface ChainMatch {
   chainProductId: string;
   name: string;
@@ -39,6 +60,8 @@ export interface GroupMappingResult {
  * flat structure that the scorer can consume without re-deriving every call.
  */
 interface MatchingRules {
+  /** Group department — used for global food-safety filter */
+  department: string;
   /** Tokens that MUST appear — scored with +2 each */
   includeTokens: string[];
   /** Tokens that score +1 when found (general keywords) */
@@ -71,7 +94,62 @@ export class ProductGroupService {
     if (!trimmed || trimmed.length < 2) return [];
 
     const normalized = normalizeName(trimmed);
-    return this.groupRepo.search(normalized, limit);
+
+    // 1. Try exact substring match (fast path)
+    const exact = await this.groupRepo.search(normalized, limit);
+    if (exact.length > 0) return exact;
+
+    // 2. Multi-word fallback: name-IDF weighted ranking
+    //    Groups are scored primarily by name-level matches, with tokens that
+    //    appear in fewer group names carrying more weight.  This makes "שקדים"
+    //    (1 group name) outweigh "חלב" (2 group names) in "חלב שקדים".
+    //    Keyword/alias matches add a small flat bonus (secondary signal).
+    //    A head-in-name bonus breaks ties when the first query token matches
+    //    a group name (so "קמח" beats "מלא" for "קמח חיטה מלא").
+    const tokens = normalized.split(' ').filter((t) => t.length >= 2);
+    if (tokens.length < 2) return [];
+
+    const [candidates, allGroups] = await Promise.all([
+      this.groupRepo.searchByTokens(tokens, limit * 2),
+      this.groupRepo.findAll(),
+    ]);
+    if (candidates.length === 0) return [];
+
+    // Name-level document frequency: how many group names contain each token
+    const tokenNameDF = new Map<string, number>();
+    for (const token of tokens) {
+      let df = 0;
+      for (const g of allGroups) {
+        if (g.normalizedName.includes(token)) df++;
+      }
+      tokenNameDF.set(token, Math.max(df, 1));
+    }
+
+    const scored = candidates.map((group) => {
+      const nameText = group.normalizedName;
+      const kwText = [...group.normalizedKeywords, ...group.aliases]
+        .join(' ')
+        .toLowerCase();
+
+      let score = 0;
+      for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        if (nameText.includes(token)) {
+          // Name match — weighted by name IDF (rarer = higher)
+          score += 1 / tokenNameDF.get(token)!;
+          // Head-in-name bonus: query's first token in group name
+          if (i === 0) score += 0.2;
+        } else if (kwText.includes(token)) {
+          // Keyword/alias match — flat low bonus (secondary signal)
+          score += 0.1;
+        }
+      }
+      return { group, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score || b.group.priority - a.group.priority);
+
+    return scored.slice(0, limit).map((s) => s.group);
   }
 
   // ─── Get variants for a group ─────────────────────────────────────
@@ -111,18 +189,29 @@ export class ProductGroupService {
       ? rules.includeTokens.map((t) => t.replace(/%/g, ''))
       : rules.searchTokens.map((t) => t.replace(/%/g, ''));
 
-    // Query each chain in parallel
-    const chainResults: Record<string, ChainMatch[]> = {};
+    // 1. Fetch and score candidates per chain (parallel)
+    const perChainScored: Record<string, ChainMatch[]> = {};
 
     await Promise.all(
       SUPPORTED_CHAINS.map(async (chainId) => {
         const candidates = await this.findCandidatesForChain(chainId, dbQueryTokens);
         const scored = this.scoreAndRank(candidates, rules);
-        if (scored.length > 0) {
-          chainResults[chainId] = scored.slice(0, RESULTS_PER_CHAIN);
-        }
+        perChainScored[chainId] = scored;
       }),
     );
+
+    // 2. Compute cross-chain coverage — count how many chains each barcode appears in
+    const barcodeCoverage = this.computeBarcodeCoverage(perChainScored);
+
+    // 3. Apply coverage bonus and re-sort, then take top N per chain
+    const chainResults: Record<string, ChainMatch[]> = {};
+    for (const chainId of SUPPORTED_CHAINS) {
+      const scored = perChainScored[chainId] ?? [];
+      const boosted = this.applyCoverageBonus(scored, barcodeCoverage);
+      if (boosted.length > 0) {
+        chainResults[chainId] = boosted.slice(0, RESULTS_PER_CHAIN);
+      }
+    }
 
     return this.buildResult(group, variant, chainResults);
   }
@@ -183,7 +272,7 @@ export class ProductGroupService {
     // Search tokens = everything positive (for the DB query)
     const searchTokens = [...new Set([...includeTokens, ...generalTokens])];
 
-    return { includeTokens, generalTokens, excludeTokens, searchTokens };
+    return { department: group.department, includeTokens, generalTokens, excludeTokens, searchTokens };
   }
 
   // ─── Private: fetch candidates from a chain ───────────────────────
@@ -246,6 +335,14 @@ export class ProductGroupService {
     candidateText: string,
     rules: MatchingRules,
   ): number {
+    // ── Global food-safety filter ─────────────────────────────────
+    // Reject cosmetics / hygiene / pet products from food groups.
+    if (FOOD_DEPARTMENTS.has(rules.department)) {
+      for (const token of candidateTokens) {
+        if (FOOD_GLOBAL_EXCLUDES.has(token)) return EXCLUDE_PENALTY;
+      }
+    }
+
     // ── Exclude check ──────────────────────────────────────────────
     // Use substring matching on the full normalized text so that
     // "שוקולד" catches compounds like "שוק.חלב" or "חלבון".
@@ -253,7 +350,7 @@ export class ProductGroupService {
       // Exact token match
       if (candidateTokens.has(token)) return EXCLUDE_PENALTY;
       // Substring match — catches partial/compound forms
-      if (candidateText.includes(token)) return EXCLUDE_PENALTY;
+      if (substringMatch(candidateText, token)) return EXCLUDE_PENALTY;
     }
 
     // ── Include check — ALL tokens must match ──────────────────────
@@ -262,7 +359,7 @@ export class ProductGroupService {
     let score = 0;
     if (rules.includeTokens.length > 0) {
       for (const token of rules.includeTokens) {
-        if (candidateTokens.has(token) || candidateText.includes(token)) {
+        if (candidateTokens.has(token) || substringMatch(candidateText, token)) {
           score += INCLUDE_WEIGHT;
         } else {
           // Missing any include token → disqualify
@@ -272,13 +369,90 @@ export class ProductGroupService {
     }
 
     // ── General keywords: +1 each ─────────────────────────────────
+    let generalMatched = 0;
     for (const token of rules.generalTokens) {
-      if (candidateTokens.has(token) || candidateText.includes(token)) {
+      if (candidateTokens.has(token) || substringMatch(candidateText, token)) {
         score += GENERAL_WEIGHT;
+        generalMatched++;
       }
     }
 
-    return score;
+    // ── Ranking signals (tiebreakers within passing products) ──────
+    // These signals differentiate candidates that all pass the include
+    // check. They must never push a valid candidate below MIN_SCORE.
+
+    // Brevity penalty: more unrelated tokens → less relevant product.
+    // "שיבולת שועל 500 גר" beats "תחליב רחצה מועשר בשיבולת שועל 3 ליטר"
+    const keywordMatchCount = rules.includeTokens.length + generalMatched;
+    const extraTokens = Math.max(0, candidateTokens.size - keywordMatchCount);
+    if (candidateTokens.size > 0) {
+      const extraRatio = extraTokens / candidateTokens.size;
+      score -= extraRatio * EXTRA_TOKEN_PENALTY;
+    }
+
+    // Position bonus: include keyword at start of name is a stronger signal.
+    // "שיבולת שועל דייסה" beats "משקה בתוספת שיבולת שועל"
+    const firstToken = candidateText.split(' ')[0];
+    if (firstToken) {
+      for (const t of rules.includeTokens) {
+        if (firstToken === t || firstToken.startsWith(t)) {
+          score += POSITION_BONUS;
+          break;
+        }
+      }
+    }
+
+    // Floor: ranking signals are tiebreakers — never disqualify a
+    // candidate that passed the include check.
+    return Math.max(score, MIN_SCORE);
+  }
+
+  // ─── Private: cross-chain coverage ─────────────────────────────────
+
+  /**
+   * Count how many chains each barcode appears in across all scored results.
+   * Returns a map of barcode → chain count.
+   */
+  private computeBarcodeCoverage(
+    perChainScored: Record<string, ChainMatch[]>,
+  ): Map<string, number> {
+    const barcodeChains = new Map<string, Set<string>>();
+
+    for (const [chainId, matches] of Object.entries(perChainScored)) {
+      for (const match of matches) {
+        if (!match.barcode) continue;
+        let chains = barcodeChains.get(match.barcode);
+        if (!chains) {
+          chains = new Set();
+          barcodeChains.set(match.barcode, chains);
+        }
+        chains.add(chainId);
+      }
+    }
+
+    const coverage = new Map<string, number>();
+    for (const [barcode, chains] of barcodeChains) {
+      coverage.set(barcode, chains.size);
+    }
+    return coverage;
+  }
+
+  /**
+   * Add a coverage bonus to products that exist in multiple chains,
+   * then re-sort by boosted score.
+   */
+  private applyCoverageBonus(
+    scored: ChainMatch[],
+    barcodeCoverage: Map<string, number>,
+  ): ChainMatch[] {
+    const boosted = scored.map((match) => {
+      const chainCount = match.barcode ? (barcodeCoverage.get(match.barcode) ?? 1) : 1;
+      const bonus = (chainCount - 1) * COVERAGE_BONUS;
+      return { ...match, score: match.score + bonus };
+    });
+
+    boosted.sort((a, b) => b.score - a.score || a.price - b.price);
+    return boosted;
   }
 
   // ─── Private: build response ──────────────────────────────────────
@@ -294,4 +468,28 @@ export class ProductGroupService {
       results,
     };
   }
+}
+
+// ─── Module-level helpers ────────────────────────────────────────────────
+
+/** Regex cache for substringMatch — avoids re-compiling the same patterns */
+const substringRegexCache = new Map<string, RegExp>();
+
+/**
+ * Word-boundary-aware substring check.
+ * For short tokens (≤3 chars) require a word boundary so "חלה" does not
+ * match inside "אחלה" or "נחלה". Longer tokens use plain substring
+ * matching to handle Hebrew plural/singular (e.g. "עגבני" → "עגבניות").
+ */
+function substringMatch(text: string, token: string): boolean {
+  if (token.length <= 3) {
+    let re = substringRegexCache.get(token);
+    if (!re) {
+      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      re = new RegExp(`(?:^|\\s)${escaped}`);
+      substringRegexCache.set(token, re);
+    }
+    return re.test(text);
+  }
+  return text.includes(token);
 }

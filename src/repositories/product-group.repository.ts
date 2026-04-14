@@ -7,11 +7,32 @@ export class ProductGroupRepository {
     const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(escaped, 'i');
 
-    // Prefix match gets priority via sort
     const docs = await ProductGroupMongoose.find({
-      $or: [{ normalizedName: regex }, { normalizedKeywords: regex }],
+      $or: [
+        { normalizedName: regex },
+        { normalizedKeywords: regex },
+        { aliases: regex },
+      ],
     })
-      .sort({ normalizedName: 1 })
+      .sort({ priority: -1, normalizedName: 1 })
+      .limit(limit)
+      .lean();
+
+    return docs.map(mapProductGroup);
+  }
+
+  async searchByTokens(tokens: string[], limit = 20): Promise<ProductGroup[]> {
+    const regexParts = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(regexParts.join('|'), 'i');
+
+    const docs = await ProductGroupMongoose.find({
+      $or: [
+        { normalizedName: regex },
+        { normalizedKeywords: regex },
+        { aliases: regex },
+      ],
+    })
+      .sort({ priority: -1, normalizedName: 1 })
       .limit(limit)
       .lean();
 
@@ -53,6 +74,8 @@ export class ProductGroupRepository {
     normalizedKeywords: string[];
     includeKeywords?: string[];
     excludeKeywords?: string[];
+    priority?: number;
+    aliases?: string[];
   }): Promise<ProductGroup> {
     const doc = await ProductGroupMongoose.findOneAndUpdate(
       { normalizedName: data.normalizedName },
