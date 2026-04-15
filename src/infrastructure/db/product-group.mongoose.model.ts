@@ -12,6 +12,7 @@ export interface IProductGroupDocument extends Document {
   excludeKeywords: string[];
   priority: number;
   aliases: string[];
+  normalizedAliases: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,12 +30,14 @@ const ProductGroupSchema = new Schema<IProductGroupDocument>(
     excludeKeywords: { type: [String], default: [] },
     priority: { type: Number, default: 0 },
     aliases: { type: [String], default: [] },
+    normalizedAliases: { type: [String], default: [] },
   },
   { timestamps: true },
 );
 
 ProductGroupSchema.index({ normalizedName: 'text', normalizedKeywords: 'text' });
 ProductGroupSchema.index({ normalizedName: 1 });
+ProductGroupSchema.index({ normalizedAliases: 1 });
 ProductGroupSchema.index({ category: 1 });
 
 export default mongoose.model<IProductGroupDocument>('ProductGroup', ProductGroupSchema);

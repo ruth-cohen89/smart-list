@@ -64,6 +64,8 @@ interface MatchingRules {
   department: string;
   /** Tokens that MUST appear — scored with +2 each */
   includeTokens: string[];
+  /** Canonical include tokens plus alias token sets, each matched as an alternative */
+  includeTokenSets: string[][];
   /** Tokens that score +1 when found (general keywords) */
   generalTokens: string[];
   /** Tokens that score -3 when found — hard-disqualify when any matches */
@@ -127,7 +129,7 @@ export class ProductGroupService {
 
     const scored = candidates.map((group) => {
       const nameText = group.normalizedName;
-      const kwText = [...group.normalizedKeywords, ...group.aliases]
+      const kwText = [...group.normalizedKeywords, ...group.aliases.map(normalizeName)]
         .join(' ')
         .toLowerCase();
 
@@ -185,16 +187,18 @@ export class ProductGroupService {
     // broad and crowd out relevant candidates within the result limit.
     // Strip `%` for the DB query because normalizedName was built with
     // normalizeName() which removes `%`.
-    const dbQueryTokens = rules.includeTokens.length > 0
-      ? rules.includeTokens.map((t) => t.replace(/%/g, ''))
-      : rules.searchTokens.map((t) => t.replace(/%/g, ''));
+    const dbQueryTokenSets = (rules.includeTokenSets.length > 0
+      ? rules.includeTokenSets
+      : [rules.searchTokens])
+      .map((tokens) => tokens.map((t) => t.replace(/%/g, '')).filter(Boolean))
+      .filter((tokens) => tokens.length > 0);
 
     // 1. Fetch and score candidates per chain (parallel)
     const perChainScored: Record<string, ChainMatch[]> = {};
 
     await Promise.all(
       SUPPORTED_CHAINS.map(async (chainId) => {
-        const candidates = await this.findCandidatesForChain(chainId, dbQueryTokens);
+        const candidates = await this.findCandidatesForChain(chainId, dbQueryTokenSets);
         const scored = this.scoreAndRank(candidates, rules);
         perChainScored[chainId] = scored;
       }),
@@ -252,9 +256,17 @@ export class ProductGroupService {
       rawExcludes.flatMap((kw) => tokenize(normalizeForMatching(kw))),
     )];
 
+    const aliasTokenSets = group.aliases
+      .map((alias) => uniqueTokens(tokenize(normalizeForMatching(alias))))
+      .filter((tokens) => tokens.length > 0);
+    let includeTokenSets = uniqueTokenSets([
+      ...(includeTokens.length > 0 ? [includeTokens] : []),
+      ...aliasTokenSets,
+    ]);
+
     // General tokens: normalizedKeywords + name tokens, minus anything
-    // already in include (avoid double-scoring)
-    const includeSet = new Set(includeTokens);
+    // already in include alternatives (avoid double-scoring)
+    const includeSet = new Set(includeTokenSets.flat());
     const groupNameTokens = tokenize(normalizeForMatching(group.name));
     const allGeneral = [
       ...rawGeneral.flatMap((kw) => tokenize(normalizeForMatching(kw))),
@@ -267,29 +279,44 @@ export class ProductGroupService {
     // to include so scoring still works for legacy seed data.
     if (includeTokens.length === 0 && generalTokens.length > 0) {
       includeTokens.push(...generalTokens.splice(0));
+      includeTokenSets = uniqueTokenSets([
+        includeTokens,
+        ...aliasTokenSets,
+      ]);
     }
 
     // Search tokens = everything positive (for the DB query)
-    const searchTokens = [...new Set([...includeTokens, ...generalTokens])];
+    const searchTokens = [...new Set([
+      ...includeTokenSets.flat(),
+      ...includeTokens,
+      ...generalTokens,
+    ])];
 
-    return { department: group.department, includeTokens, generalTokens, excludeTokens, searchTokens };
+    return { department: group.department, includeTokens, includeTokenSets, generalTokens, excludeTokens, searchTokens };
   }
 
   // ─── Private: fetch candidates from a chain ───────────────────────
 
   private async findCandidatesForChain(
     chainId: ChainId,
-    tokens: string[],
+    tokenSets: string[][],
   ): Promise<ChainProduct[]> {
-    // Pass tokens as a space-joined string — the repository handles
-    // tokenization and regex construction itself.
-    const queryName = tokens.join(' ');
+    // Pass each token set as a space-joined string — the repository handles
+    // tokenization and regex construction itself. Multiple sets represent
+    // canonical/alias alternatives, so de-dupe the combined candidates.
+    const uniqueCandidates = new Map<string, ChainProduct>();
 
-    console.log(`[ProductGroupService] findCandidates chainId=${chainId} tokens=[${tokens.join(', ')}]`);
-    const candidates = await this.chainProductRepo.findCandidatesByName(queryName, chainId);
-    console.log(`[ProductGroupService] chainId=${chainId} candidates=${candidates.length}`);
+    await Promise.all(tokenSets.map(async (tokens) => {
+      const queryName = tokens.join(' ');
+      console.log(`[ProductGroupService] findCandidates chainId=${chainId} tokens=[${tokens.join(', ')}]`);
+      const candidates = await this.chainProductRepo.findCandidatesByName(queryName, chainId);
+      console.log(`[ProductGroupService] chainId=${chainId} tokens=[${tokens.join(', ')}] candidates=${candidates.length}`);
+      for (const candidate of candidates) {
+        uniqueCandidates.set(candidate.id, candidate);
+      }
+    }));
 
-    return candidates;
+    return [...uniqueCandidates.values()];
   }
 
   // ─── Private: score and rank candidates ───────────────────────────
@@ -353,20 +380,13 @@ export class ProductGroupService {
       if (substringMatch(candidateText, token)) return EXCLUDE_PENALTY;
     }
 
-    // ── Include check — ALL tokens must match ──────────────────────
+    // ── Include check — one complete canonical/alias set must match ─
     // Use both exact token match and substring match on the full text
     // to handle Hebrew singular/plural (עגבני → עגבניות/עגבניה).
     let score = 0;
-    if (rules.includeTokens.length > 0) {
-      for (const token of rules.includeTokens) {
-        if (candidateTokens.has(token) || substringMatch(candidateText, token)) {
-          score += INCLUDE_WEIGHT;
-        } else {
-          // Missing any include token → disqualify
-          return 0;
-        }
-      }
-    }
+    const matchedIncludeTokens = this.findMatchingIncludeTokenSet(candidateTokens, candidateText, rules);
+    if (!matchedIncludeTokens) return 0;
+    score += matchedIncludeTokens.length * INCLUDE_WEIGHT;
 
     // ── General keywords: +1 each ─────────────────────────────────
     let generalMatched = 0;
@@ -383,7 +403,7 @@ export class ProductGroupService {
 
     // Brevity penalty: more unrelated tokens → less relevant product.
     // "שיבולת שועל 500 גר" beats "תחליב רחצה מועשר בשיבולת שועל 3 ליטר"
-    const keywordMatchCount = rules.includeTokens.length + generalMatched;
+    const keywordMatchCount = matchedIncludeTokens.length + generalMatched;
     const extraTokens = Math.max(0, candidateTokens.size - keywordMatchCount);
     if (candidateTokens.size > 0) {
       const extraRatio = extraTokens / candidateTokens.size;
@@ -394,7 +414,7 @@ export class ProductGroupService {
     // "שיבולת שועל דייסה" beats "משקה בתוספת שיבולת שועל"
     const firstToken = candidateText.split(' ')[0];
     if (firstToken) {
-      for (const t of rules.includeTokens) {
+      for (const t of matchedIncludeTokens) {
         if (firstToken === t || firstToken.startsWith(t)) {
           score += POSITION_BONUS;
           break;
@@ -405,6 +425,23 @@ export class ProductGroupService {
     // Floor: ranking signals are tiebreakers — never disqualify a
     // candidate that passed the include check.
     return Math.max(score, MIN_SCORE);
+  }
+
+  private findMatchingIncludeTokenSet(
+    candidateTokens: Set<string>,
+    candidateText: string,
+    rules: MatchingRules,
+  ): string[] | null {
+    if (rules.includeTokenSets.length === 0) return [];
+
+    for (const tokenSet of rules.includeTokenSets) {
+      const matchesAll = tokenSet.every((token) =>
+        candidateTokens.has(token) || substringMatch(candidateText, token),
+      );
+      if (matchesAll) return tokenSet;
+    }
+
+    return null;
   }
 
   // ─── Private: cross-chain coverage ─────────────────────────────────
@@ -474,6 +511,28 @@ export class ProductGroupService {
 
 /** Regex cache for substringMatch — avoids re-compiling the same patterns */
 const substringRegexCache = new Map<string, RegExp>();
+
+function uniqueTokens(tokens: string[]): string[] {
+  return [...new Set(tokens)];
+}
+
+function uniqueTokenSets(tokenSets: string[][]): string[][] {
+  const seen = new Set<string>();
+  const unique: string[][] = [];
+
+  for (const tokenSet of tokenSets) {
+    const tokens = uniqueTokens(tokenSet);
+    if (tokens.length === 0) continue;
+
+    const key = tokens.join('\u0000');
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    unique.push(tokens);
+  }
+
+  return unique;
+}
 
 /**
  * Word-boundary-aware substring check.

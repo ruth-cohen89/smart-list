@@ -234,6 +234,31 @@ describe('ProductGroupService scoring', () => {
     return new ProductGroupService(groupRepo, variantRepo, chainProductRepo);
   }
 
+  function buildScoringServiceWithLookup(
+    group: ProductGroup,
+    candidatesByQuery: Record<string, ChainProduct[]>,
+  ) {
+    const groupRepo = {
+      findById: jest.fn().mockResolvedValue(group),
+      search: jest.fn().mockResolvedValue([]),
+      searchByTokens: jest.fn().mockResolvedValue([]),
+      findAll: jest.fn().mockResolvedValue([]),
+    } as unknown as ProductGroupRepository;
+
+    const variantRepo = {
+      findById: jest.fn().mockResolvedValue(null),
+      findByGroupId: jest.fn().mockResolvedValue([]),
+    } as unknown as ProductVariantRepository;
+
+    const chainProductRepo = {
+      findCandidatesByName: jest.fn((query: string) =>
+        Promise.resolve(candidatesByQuery[query] ?? []),
+      ),
+    } as unknown as ChainProductRepository;
+
+    return new ProductGroupService(groupRepo, variantRepo, chainProductRepo);
+  }
+
   it('blocks cosmetics from food groups via global blocklist', async () => {
     const group = fakeGroup({
       id: 'g-oat',
@@ -397,6 +422,82 @@ describe('ProductGroupService scoring', () => {
     expect(matches.length).toBe(2);
     expect(matches[0].chainProductId).toBe('cp-start');
   });
+
+  it('maps baguette products that use the בגט alias instead of canonical באגט', async () => {
+    const group = fakeGroup({
+      id: 'g-baguette',
+      name: 'באגט',
+      department: 'מזון',
+      includeKeywords: ['באגט'],
+      normalizedKeywords: ['באגט', 'בגט', 'צרפתי'],
+      aliases: ['בגט'],
+    });
+    const baguette = fakeChainProduct({
+      id: 'cp-baget',
+      originalName: 'בגט צרפתי',
+      normalizedName: 'בגט צרפתי',
+      chainId: 'shufersal',
+    });
+
+    const service = buildScoringServiceWithLookup(group, {
+      'בגט': [baguette],
+    });
+    const result = await service.mapToProducts('g-baguette');
+
+    const matches = result.results['shufersal'] ?? [];
+    expect(matches.map((m) => m.chainProductId)).toContain('cp-baget');
+  });
+
+  it('maps challah products that use the plural חלות alias', async () => {
+    const group = fakeGroup({
+      id: 'g-challah',
+      name: 'חלה',
+      department: 'מזון',
+      includeKeywords: ['חלה'],
+      normalizedKeywords: ['חלה', 'חלות', 'שבת'],
+      aliases: ['חלות'],
+    });
+    const challot = fakeChainProduct({
+      id: 'cp-challot',
+      originalName: 'חלות שבת',
+      normalizedName: 'חלות שבת',
+      chainId: 'shufersal',
+    });
+
+    const service = buildScoringServiceWithLookup(group, {
+      'חלות': [challot],
+    });
+    const result = await service.mapToProducts('g-challah');
+
+    const matches = result.results['shufersal'] ?? [];
+    expect(matches.map((m) => m.chainProductId)).toContain('cp-challot');
+  });
+
+  it('maps spelt flour products that use קמח ספלט alias instead of קמח כוסמין', async () => {
+    const group = fakeGroup({
+      id: 'g-spelt-flour',
+      name: 'קמח כוסמין',
+      department: 'מזון',
+      includeKeywords: ['קמח', 'כוסמין'],
+      normalizedKeywords: ['קמח', 'כוסמין', 'ספלט'],
+      aliases: ['קמח ספלט'],
+    });
+    const spelt = fakeChainProduct({
+      id: 'cp-spelt',
+      originalName: 'קמח ספלט מלא',
+      normalizedName: 'קמח ספלט מלא',
+      chainId: 'shufersal',
+    });
+
+    const service = buildScoringServiceWithLookup(group, {
+      'קמח ספלט': [spelt],
+    });
+    const result = await service.mapToProducts('g-spelt-flour');
+
+    const matches = result.results['shufersal'] ?? [];
+    expect(matches.map((m) => m.chainProductId)).toContain('cp-spelt');
+  });
+
 });
 
 // ---------------------------------------------------------------------------

@@ -77,9 +77,10 @@ export default function ProductSearchInput({
     debounceRef.current = setTimeout(async () => {
       try {
         const data = await productGroupService.searchGroups(q.trim());
-        setGroups(data.results);
+        const apiResults = data.results ?? [];
+        setGroups(apiResults);
         // Fallback: if no groups found, try raw product search
-        if (data.results.length === 0 && onFallbackSelect) {
+        if (apiResults.length === 0 && onFallbackSelect) {
           try {
             const fallback = await productService.search(q.trim());
             setFallbackResults(fallback.results);

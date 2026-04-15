@@ -1,6 +1,7 @@
 import ProductGroupMongoose from '../infrastructure/db/product-group.mongoose.model';
 import { mapProductGroup } from '../mappers/product-group.mapper';
 import type { ProductGroup } from '../models/product-group.model';
+import { normalizeName } from '../utils/normalize';
 
 export class ProductGroupRepository {
   async search(query: string, limit = 20): Promise<ProductGroup[]> {
@@ -11,7 +12,9 @@ export class ProductGroupRepository {
       $or: [
         { normalizedName: regex },
         { normalizedKeywords: regex },
+        { includeKeywords: regex },
         { aliases: regex },
+        { normalizedAliases: regex },
       ],
     })
       .sort({ priority: -1, normalizedName: 1 })
@@ -29,7 +32,9 @@ export class ProductGroupRepository {
       $or: [
         { normalizedName: regex },
         { normalizedKeywords: regex },
+        { includeKeywords: regex },
         { aliases: regex },
+        { normalizedAliases: regex },
       ],
     })
       .sort({ priority: -1, normalizedName: 1 })
@@ -77,9 +82,10 @@ export class ProductGroupRepository {
     priority?: number;
     aliases?: string[];
   }): Promise<ProductGroup> {
+    const normalizedAliases = data.aliases?.map(normalizeName).filter(Boolean) ?? [];
     const doc = await ProductGroupMongoose.findOneAndUpdate(
       { normalizedName: data.normalizedName },
-      { $set: data },
+      { $set: { ...data, normalizedAliases } },
       { upsert: true, new: true, runValidators: true },
     );
 
