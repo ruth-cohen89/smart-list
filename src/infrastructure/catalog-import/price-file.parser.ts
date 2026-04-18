@@ -246,9 +246,10 @@ export function parsePriceXml(xmlData: Buffer | string, filename?: string): Pars
   }
 
   for (const item of items) {
-    // Skip inactive items — covers ItemStatus (standard), itemStatus (Machsanei Hashuk lowercase)
+    // Skip inactive items — covers ItemStatus (standard), itemStatus (Machsanei Hashuk lowercase).
+    // Treat missing or empty string as active (Shufersal uses empty <ItemStatus/>).
     const statusVal = item.ItemStatus ?? item.itemStatus;
-    if (statusVal !== undefined && Number(statusVal) !== 1) {
+    if (statusVal !== undefined && statusVal !== '' && Number(statusVal) !== 1) {
       skippedStatus++;
       continue;
     }

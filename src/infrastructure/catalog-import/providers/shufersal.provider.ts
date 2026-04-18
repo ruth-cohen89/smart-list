@@ -1,16 +1,10 @@
-import https from 'https';
 import { URL } from 'url';
-import { downloadFile } from '../chain-source.client';
+import { downloadFile, fetchListingPage, FileEntry, pickLatestFile } from '../chain-source.client';
 
 const BASE_URL = 'https://prices.shufersal.co.il';
 const DEFAULT_PRICE_FULL_CATEGORY_ID = 2;
 const DEFAULT_PROMO_FULL_CATEGORY_ID = 4;
 const DEFAULT_STORE_ID = '413';
-
-interface FileEntry {
-  filename: string;
-  downloadUrl: string;
-}
 
 export interface ProviderFile {
   filename: string;
@@ -43,83 +37,77 @@ export class ShufersalProvider {
       `[IMPORT] ShufersalProvider start chainId=shufersal filePrefix=${this.filePrefix} categoryId=${this.categoryId}`,
     );
 
-    const listingUrl =
+    const baseListingUrl =
       `${BASE_URL}/FileObject/UpdateCategory` +
-      `?catID=${this.categoryId}&storeId=${this.storeId}&paginate=true&page=1`;
+      `?catID=${this.categoryId}&storeId=${this.storeId}&paginate=true`;
 
-    const { body: html, contentType } = await this.fetchHtml(listingUrl);
-    console.log(`[IMPORT] content-type=${contentType}`);
+    const allEntries = await this.fetchAllPages(baseListingUrl);
+    console.log(`[IMPORT] Shufersal total raw links: ${allEntries.length}`);
 
-    const entries = this.parseTableRows(html);
-    const discovered = entries.filter(
-      (entry) =>
-        entry.filename.startsWith(this.filePrefix) && entry.filename.includes(`-${this.storeId}-`),
-    );
-
-    console.log(
-      `[IMPORT] discovered ${this.filePrefix} files for storeId=${this.storeId}: ${discovered.map((entry) => entry.filename).join(', ') || 'none'}`,
-    );
-
-    if (discovered.length === 0) {
+    if (allEntries.length === 0) {
       console.log(`[IMPORT] no ${this.filePrefix} file found for storeId=${this.storeId}`);
       return null;
     }
 
-    const latest = discovered.reduce((current, candidate) =>
-      candidate.filename.localeCompare(current.filename) > 0 ? candidate : current,
-    );
-
-    console.log(`[IMPORT] selected latest ${this.filePrefix} file: ${latest.filename}`);
+    const latest = pickLatestFile(allEntries)!;
+    console.log(`[IMPORT] Shufersal selected: ${latest.filename}`);
 
     const rawData = await downloadFile(latest.downloadUrl);
-    console.log(
-      `[IMPORT] downloaded ${this.filePrefix} file: ${latest.filename} (${rawData.length} bytes)`,
-    );
+    console.log(`[IMPORT] downloaded ${latest.filename} (${rawData.length} bytes)`);
 
     return { filename: latest.filename, rawData };
   }
 
-  private parseTableRows(html: string): FileEntry[] {
+  private async fetchAllPages(baseListingUrl: string): Promise<FileEntry[]> {
+    const page1Url = `${baseListingUrl}&page=1`;
+    console.log(`[IMPORT] Shufersal listing page 1: ${page1Url}`);
+    const html1 = await fetchListingPage(page1Url);
+    const entries1 = this.extractLinks(html1);
+    const totalPages = this.detectPageCount(html1);
+    console.log(`[IMPORT] Shufersal page 1/${totalPages} — ${entries1.length} links found`);
+
+    const allEntries = [...entries1];
+    for (let page = 2; page <= totalPages; page++) {
+      const pageUrl = `${baseListingUrl}&page=${page}`;
+      console.log(`[IMPORT] Shufersal listing page ${page}: ${pageUrl}`);
+      const html = await fetchListingPage(pageUrl);
+      const entries = this.extractLinks(html);
+      console.log(`[IMPORT] Shufersal page ${page}/${totalPages} — ${entries.length} links found`);
+      allEntries.push(...entries);
+    }
+    return allEntries;
+  }
+
+  // Shufersal serves files as Azure Blob .gz URLs (not .xml.gz).
+  // The server pre-filters by catID + storeId, so all returned links match the
+  // requested prefix and store. We still filter by prefix to guard against any
+  // unexpected entries on the page.
+  // href="https://...blob.core.windows.net/.../PriceFull...-413-TIMESTAMP.gz?sv=...&amp;..."
+  private extractLinks(html: string): FileEntry[] {
     const entries: FileEntry[] = [];
-    const rowRe = /<tr[^>]*class="webgrid-row-style"[^>]*>([\s\S]*?)<\/tr>/gi;
-    const hrefRe = /<a\s+[^>]*href="([^"]+)"/i;
-
-    let rowMatch: RegExpExecArray | null;
-    while ((rowMatch = rowRe.exec(html)) !== null) {
-      const hrefMatch = hrefRe.exec(rowMatch[1]);
-      if (!hrefMatch) continue;
-
-      const downloadUrl = hrefMatch[1].replace(/&amp;/g, '&');
+    const linkRe = new RegExp(`href="([^"]*${this.filePrefix}[^"]*[.]gz[^"]*)"`, 'gi');
+    let m: RegExpExecArray | null;
+    while ((m = linkRe.exec(html)) !== null) {
+      const rawHref = m[1].replace(/&amp;/g, '&');
       try {
-        const pathname = new URL(downloadUrl).pathname;
-        const filename = pathname.split('/').pop();
-        if (filename) {
-          entries.push({ filename, downloadUrl });
-        }
+        const urlObj = new URL(rawHref);
+        const filename = urlObj.pathname.split('/').pop();
+        if (filename) entries.push({ filename, downloadUrl: rawHref });
       } catch {
-        // Ignore malformed listing entries.
+        // skip malformed hrefs
       }
     }
-
     return entries;
   }
 
-  private fetchHtml(url: string): Promise<{ body: string; contentType: string }> {
-    return new Promise((resolve, reject) => {
-      const req = https.get(url, (res) => {
-        const contentType = res.headers['content-type'] ?? 'unknown';
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => {
-          resolve({
-            body: Buffer.concat(chunks).toString('utf-8'),
-            contentType,
-          });
-        });
-        res.on('error', reject);
-      });
-
-      req.on('error', reject);
-    });
+  private detectPageCount(html: string): number {
+    const pageRe = /[?&]page=(\d+)/gi;
+    let max = 1;
+    let m: RegExpExecArray | null;
+    while ((m = pageRe.exec(html)) !== null) {
+      const n = parseInt(m[1], 10);
+      if (n > max) max = n;
+    }
+    return max;
   }
 }

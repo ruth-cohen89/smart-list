@@ -145,9 +145,8 @@ export async function fetchListingPage(url: string): Promise<string> {
  * Scans all href attributes for links that look like price XML files.
  * The base URL is used to resolve relative hrefs into absolute download URLs.
  */
-export function parseFileLinks(html: string, baseUrl: string): FileEntry[] {
-  // Match href="..." or href='...' containing PriceFull*.xml or PriceFull*.xml.gz
-  const linkRe = /href=["']([^"']*PriceFull[^"']*\.xml(?:\.gz)?)["']/gi;
+export function parseFileLinks(html: string, baseUrl: string, prefix = 'PriceFull'): FileEntry[] {
+  const linkRe = new RegExp(`href=["']([^"']*${prefix}[^"']*\\.xml(?:\\.gz)?)["']`, 'gi');
   const entries: FileEntry[] = [];
   let m: RegExpExecArray | null;
 
