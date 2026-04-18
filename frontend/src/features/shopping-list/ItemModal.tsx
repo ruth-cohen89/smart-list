@@ -37,6 +37,7 @@ const CHAIN_COLORS: Record<string, string> = {
 
 interface SelectedProduct {
   chainProductId: string;
+  productId?: string;
   chainId: string;
   name: string;
   barcode?: string;
@@ -56,6 +57,21 @@ function flattenMappingResults(
   // Sort by score desc, then price asc
   flat.sort((a, b) => b.score - a.score || a.price - b.price);
   return flat;
+}
+
+function toSelectedProduct(match: ChainMatch & { chainId: string }): SelectedProduct {
+  return {
+    chainProductId: match.chainProductId,
+    productId: match.productId,
+    chainId: match.chainId,
+    name: match.name,
+    barcode: match.barcode,
+    price: match.price,
+  };
+}
+
+function findBestConcreteMatch(selection: GroupSelection): (ChainMatch & { chainId: string }) | null {
+  return flattenMappingResults(selection.mapping.results).find((match) => match.productId || match.barcode) ?? null;
 }
 
 export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalProps) {
@@ -101,7 +117,8 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
 
   const handleGroupSelect = (sel: GroupSelection) => {
     setSelection(sel);
-    setSelectedProduct(null);
+    const bestMatch = sel.selectionMode === 'canonical' ? findBestConcreteMatch(sel) : null;
+    setSelectedProduct(bestMatch ? toSelectedProduct(bestMatch) : null);
     if (sel.category && !category) {
       setCategory(sel.category);
     }
@@ -134,13 +151,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
   // ─── Step 2: user picks a concrete mapped product ─────────────
 
   const handleProductPick = (match: ChainMatch & { chainId: string }) => {
-    setSelectedProduct({
-      chainProductId: match.chainProductId,
-      chainId: match.chainId,
-      name: match.name,
-      barcode: match.barcode,
-      price: match.price,
-    });
+    setSelectedProduct(toSelectedProduct(match));
     setName(match.name);
     setError('');
   };
@@ -168,6 +179,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
 
     setLoading(true);
     try {
+      const concreteProduct = !isEdit && !hasFallback ? selectedProduct : null;
       const payload: CreateItemPayload = {
         name: isEdit
           ? name.trim()
@@ -180,7 +192,8 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
         ...(notes && { notes: notes.trim() }),
         priority,
         ...(!isEdit && hasFallback && fallbackProduct?.barcode ? { barcode: fallbackProduct.barcode } : {}),
-        ...(!isEdit && !hasFallback && !isCanonical && selectedProduct?.barcode ? { barcode: selectedProduct.barcode } : {}),
+        ...(concreteProduct?.productId ? { productId: concreteProduct.productId } : {}),
+        ...(concreteProduct?.barcode ? { barcode: concreteProduct.barcode } : {}),
         ...(!isEdit && selection ? { productGroupId: selection.groupId } : {}),
         ...(!isEdit && selection?.variantId ? { variantId: selection.variantId } : {}),
       };

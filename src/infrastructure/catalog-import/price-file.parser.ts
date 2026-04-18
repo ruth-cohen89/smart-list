@@ -225,13 +225,31 @@ export function parsePriceXml(xmlData: Buffer | string, filename?: string): Pars
   }
 
   const results: ParsedProduct[] = [];
-  let skippedCount = 0;
+  let skippedStatus = 0;
+  let skippedCode   = 0;
+  let skippedName   = 0;
+  let skippedPrice  = 0;
+
+  if (items.length > 0) {
+    const first = items[0];
+    console.log('[PARSE] first raw item keys:', Object.keys(first).join(', '));
+    console.log('[PARSE] first raw item:', JSON.stringify(first));
+    console.log(
+      '[PARSE] raw field values —',
+      `ItemStatus=${JSON.stringify(first.ItemStatus)}`,
+      `itemStatus=${JSON.stringify(first.itemStatus)}`,
+      `ItemCode=${JSON.stringify(first.ItemCode)}`,
+      `ItemName=${JSON.stringify(first.ItemName)}`,
+      `ItemNm=${JSON.stringify(first.ItemNm)}`,
+      `ItemPrice=${JSON.stringify(first.ItemPrice)}`,
+    );
+  }
 
   for (const item of items) {
     // Skip inactive items — covers ItemStatus (standard), itemStatus (Machsanei Hashuk lowercase)
     const statusVal = item.ItemStatus ?? item.itemStatus;
     if (statusVal !== undefined && Number(statusVal) !== 1) {
-      skippedCount++;
+      skippedStatus++;
       continue;
     }
 
@@ -246,10 +264,9 @@ export function parsePriceXml(xmlData: Buffer | string, filename?: string): Pars
       ) ?? '';
     const rawPrice = Number(item.ItemPrice);
 
-    if (!itemCode || !itemName || !rawPrice || rawPrice <= 0) {
-      skippedCount++;
-      continue;
-    }
+    if (!itemCode)                  { skippedCode++;  continue; }
+    if (!itemName)                  { skippedName++;  continue; }
+    if (!rawPrice || rawPrice <= 0) { skippedPrice++; continue; }
 
     // Barcode only when itemCode looks like a real EAN/UPC (8–14 digits)
     const isLikelyBarcode = /^\d{8,14}$/.test(itemCode);
@@ -292,10 +309,13 @@ export function parsePriceXml(xmlData: Buffer | string, filename?: string): Pars
   }
 
   // ── Debug summary ──────────────────────────────────────────────────────────
+  const skippedCount = skippedStatus + skippedCode + skippedName + skippedPrice;
   const barcodeCount = results.filter((p) => p.barcode !== undefined).length;
   const noBarcodeCount = results.length - barcodeCount;
   console.log(
-    `[PARSE] done — parsed=${results.length} skipped=${skippedCount} withBarcode=${barcodeCount} noBarcode=${noBarcodeCount}`,
+    `[PARSE] done — parsed=${results.length} skipped=${skippedCount}` +
+      ` (status=${skippedStatus} code=${skippedCode} name=${skippedName} price=${skippedPrice})` +
+      ` withBarcode=${barcodeCount} noBarcode=${noBarcodeCount}`,
   );
   results.slice(0, 3).forEach((p, i) => console.log(`[PARSE] sample[${i}]:`, JSON.stringify(p)));
 

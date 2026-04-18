@@ -139,6 +139,7 @@ export interface ProductVariantsResponse {
 
 export interface ChainMatch {
   chainProductId: string;
+  productId?: string;
   name: string;
   normalizedName: string;
   price: number;

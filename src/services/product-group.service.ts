@@ -42,6 +42,7 @@ const FOOD_GLOBAL_EXCLUDES = new Set([
 
 export interface ChainMatch {
   chainProductId: string;
+  productId?: string;
   name: string;
   normalizedName: string;
   price: number;
@@ -335,6 +336,7 @@ export class ProductGroupService {
       if (score >= MIN_SCORE) {
         scored.push({
           chainProductId: cp.id,
+          productId: cp.productId,
           name: cp.originalName,
           normalizedName: cp.normalizedName,
           price: cp.price,
@@ -434,9 +436,19 @@ export class ProductGroupService {
   ): string[] | null {
     if (rules.includeTokenSets.length === 0) return [];
 
-    for (const tokenSet of rules.includeTokenSets) {
+    // Try longer (more specific) sets first so a product explicitly matching
+    // [מלח, ים] gets credit for 2 tokens rather than falling through to [מלח].
+    // This prevents the single-token fallback from masking better alias matches.
+    const sorted = [...rules.includeTokenSets].sort((a, b) => b.length - a.length);
+
+    for (const tokenSet of sorted) {
+      // Use plain includes() — NOT substringMatch — because Hebrew prefixes
+      // (ה, ב, ל, כ, מ, ש) attach directly to words without spaces, so
+      // "המלח" contains "מלח" but the word-boundary regex (?:^|\s)מלח fails.
+      // Word-boundary matching is appropriate only for excludes (false-positive
+      // prevention); for includes it incorrectly rejects valid prefixed forms.
       const matchesAll = tokenSet.every((token) =>
-        candidateTokens.has(token) || substringMatch(candidateText, token),
+        candidateTokens.has(token) || candidateText.includes(token),
       );
       if (matchesAll) return tokenSet;
     }

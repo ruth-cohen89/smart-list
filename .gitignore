@@ -30,3 +30,11 @@ Thumbs.db
 # Uploads
 uploads/
 tmp/
+
+# MCP servers
+.mcp.json
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/

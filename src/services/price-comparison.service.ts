@@ -106,7 +106,32 @@ export class PriceComparisonService {
     item: ShoppingItem,
     chainId: ChainId,
   ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion'> | null> {
-    // 1. productId — highest priority (global product identity)
+    const normalizedItemName = normalizeName(item.rawName ?? item.name);
+    const produceMatch = matchProduceCanonical(normalizedItemName);
+
+    // 1. Produce items — run produce matching first, bypassing any stale
+    //    productId/barcode/matchedProduct on the shopping list item.
+    //    If produce matching finds no chain product, allow a safe name fallback
+    //    but reject candidates that match produce exclude tokens (e.g. pickled/preserved variants).
+    if (produceMatch) {
+      const produceResult = await this.matchByProduce(item, chainId);
+      if (produceResult) return produceResult;
+
+      const nameResult = await this.matchByName(item, chainId);
+      const excludeTokens = produceMatch.entry.excludeTokens ?? [];
+      if (nameResult && excludeTokens.length > 0) {
+        const candidateName = nameResult.product.normalizedName ?? '';
+        if (excludeTokens.some((t) => candidateName.includes(t))) {
+          console.log(
+            `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=name status=rejected_exclude_token`,
+          );
+          return null;
+        }
+      }
+      return nameResult;
+    }
+
+    // 2. productId — highest priority for packaged products (global product identity)
     if (item.productId) {
       const productIdMatches = await this.chainProductRepo.findByProductId(item.productId, chainId);
       if (productIdMatches.length > 0) {
@@ -130,7 +155,7 @@ export class PriceComparisonService {
       }
     }
 
-    // 2. Barcode match — strict: if item has a barcode, match by barcode only.
+    // 3. Barcode match — strict: if item has a barcode, match by barcode only.
     //    Do NOT fall back to name matching for barcode items, because a similar
     //    name can map to a completely different product (wrong size, fat %, etc.).
     if (item.barcode) {
@@ -163,11 +188,7 @@ export class PriceComparisonService {
       return null;
     }
 
-    // ── Below: only items WITHOUT a barcode ──
-
-    // 3. Produce catalog match — deterministic, by canonical key
-    const produceResult = await this.matchByProduce(item, chainId);
-    if (produceResult) return produceResult;
+    // ── Below: only packaged items WITHOUT a barcode ──
 
     // 4. Existing matchedProduct shortcut — try to resolve by externalProductCode or barcode
     if (
@@ -181,7 +202,7 @@ export class PriceComparisonService {
       }
     }
 
-    // 5. Name matching (fuzzy fallback) — only for non-barcode items
+    // 5. Name matching (fuzzy fallback) — only for non-barcode packaged items
     return this.matchByName(item, chainId);
   }
 
@@ -254,8 +275,18 @@ export class PriceComparisonService {
       isWeighted: produceMatch.entry.isWeighted,
     });
 
-    // Find chain products linked to this global product
-    const chainProducts = await this.chainProductRepo.findByProductId(product.id, chainId);
+    // Find chain products linked to this global product; restrict to produce type to
+    // prevent processed items (e.g. tomato paste) from leaking through stale backfill links.
+    // Also filter out chain products whose names contain exclude tokens (e.g. pickled/preserved variants).
+    const excludeTokens = produceMatch.entry.excludeTokens ?? [];
+    const chainProducts = (await this.chainProductRepo.findByProductId(product.id, chainId)).filter(
+      (p) => {
+        if (p.productType !== 'produce') return false;
+        if (excludeTokens.length === 0) return true;
+        const name = p.normalizedName ?? '';
+        return !excludeTokens.some((t) => name.includes(t));
+      },
+    );
     if (chainProducts.length === 0) {
       console.log(
         `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} status=no_chain_product`,

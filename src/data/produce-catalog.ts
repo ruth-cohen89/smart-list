@@ -15,6 +15,7 @@ export interface ProduceCatalogEntry {
   category: ProduceCategory;
   unitType: 'ק"ג' | 'יחידה';
   isWeighted: boolean;
+  excludeTokens?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -28,6 +29,7 @@ interface RawProduceEntry {
   category: ProduceCategory;
   unitType: 'ק"ג' | 'יחידה';
   isWeighted: boolean;
+  excludeTokens?: string[];
 }
 
 const RAW_CATALOG: RawProduceEntry[] = [
@@ -39,6 +41,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['מיץ', 'חומץ', 'ריבה', 'מיובש'],
   },
   {
     canonicalKey: 'banana',
@@ -47,6 +50,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['מיובשת', 'צ\'יפס', 'מיץ'],
   },
   {
     canonicalKey: 'orange',
@@ -55,6 +59,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['מיץ', 'סירופ'],
   },
   {
     canonicalKey: 'clementine',
@@ -103,6 +108,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['מיץ', 'יין', 'צימוקים'],
   },
   {
     canonicalKey: 'watermelon',
@@ -127,6 +133,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['ריבה', 'מיץ', 'מיובש'],
   },
   {
     canonicalKey: 'blueberry',
@@ -151,6 +158,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['שימורים', 'ריבה', 'מיץ', 'פחית'],
   },
   {
     canonicalKey: 'nectarine',
@@ -231,6 +239,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['מיובש', 'מיץ', 'קפוא'],
   },
   {
     canonicalKey: 'avocado',
@@ -239,6 +248,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['ממרח', 'שמן', 'גוואקמולי'],
   },
   {
     canonicalKey: 'pineapple',
@@ -247,6 +257,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'יחידה',
     isWeighted: false,
+    excludeTokens: ['שימורים', 'מיץ', 'פחית', 'קפוא'],
   },
   {
     canonicalKey: 'kiwi',
@@ -293,10 +304,29 @@ const RAW_CATALOG: RawProduceEntry[] = [
   {
     canonicalKey: 'tomato',
     canonicalName: 'עגבניה',
-    aliases: ['עגבניה', 'עגבניות', 'עגבנייה', 'עגבניות שרי', 'עגבניות שרי מתוקות', 'עגבניית שרי', 'עגבניות אשכולות'],
+    aliases: ['עגבניה', 'עגבניות', 'עגבנייה'],
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ'],
+  },
+  {
+    canonicalKey: 'tomato-cherry',
+    canonicalName: 'עגבניות שרי',
+    aliases: ['עגבניות שרי', 'עגבניית שרי', 'עגבניות שרי מתוקות', 'עגבניות אשכולות'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ'],
+  },
+  {
+    canonicalKey: 'tomato-date',
+    canonicalName: 'עגבניית תמר',
+    aliases: ['עגבניית תמר', 'עגבניות תמר'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ'],
   },
   {
     canonicalKey: 'cucumber',
@@ -305,6 +335,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['חמוצים', 'חמוץ', 'כבוש', 'כבושים', 'מלפפונון', 'במלח', 'בחומץ', 'שימורים', 'משומר', 'כבושה'],
   },
   {
     canonicalKey: 'pepper-red',
@@ -313,6 +344,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'ממולא', 'שימורים', 'רוטב'],
   },
   {
     canonicalKey: 'pepper-green',
@@ -321,6 +353,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'ממולא', 'שימורים', 'רוטב'],
   },
   {
     canonicalKey: 'pepper-yellow',
@@ -329,6 +362,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'ממולא', 'שימורים', 'רוטב'],
   },
   {
     canonicalKey: 'hot-pepper',
@@ -337,6 +371,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'שימורים', 'רוטב'],
   },
   {
     canonicalKey: 'onion',
@@ -345,6 +380,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['מטוגן', 'אבקת', 'מרק', 'קפוא', 'טבעות'],
   },
   {
     canonicalKey: 'red-onion',
@@ -353,6 +389,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'שימורים'],
   },
   {
     canonicalKey: 'green-onion',
@@ -369,6 +406,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'בשמן', 'קלוי', 'אבקת', 'ממרח', 'שימורים'],
   },
   {
     canonicalKey: 'potato',
@@ -377,6 +415,16 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['פירה', 'צ\'יפס', 'קפוא', 'אדום'],
+  },
+  {
+    canonicalKey: 'potato-red',
+    canonicalName: 'תפוח אדמה אדום',
+    aliases: ['תפוח אדמה אדום', 'תפוחי אדמה אדומים'],
+    category: 'ירק',
+    unitType: 'ק"ג',
+    isWeighted: true,
+    excludeTokens: ['פירה', 'צ\'יפס', 'קפוא'],
   },
   {
     canonicalKey: 'sweet-potato',
@@ -401,6 +449,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'ממולא', 'שימורים'],
   },
   {
     canonicalKey: 'eggplant',
@@ -409,6 +458,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'שרוף', 'ממרח', 'שימורים'],
   },
   {
     canonicalKey: 'cabbage',
@@ -417,6 +467,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'חמוץ', 'שימורים'],
   },
   {
     canonicalKey: 'red-cabbage',
@@ -425,6 +476,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['כבוש', 'חמוץ', 'שימורים'],
   },
   {
     canonicalKey: 'cauliflower',

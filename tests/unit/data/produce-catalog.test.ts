@@ -38,7 +38,7 @@ describe('matchProduceCanonical', () => {
   it('matches exact alias', () => {
     const result = matchProduceCanonical(normalizeName('עגבניות שרי'));
     expect(result).not.toBeNull();
-    expect(result!.entry.canonicalKey).toBe('tomato');
+    expect(result!.entry.canonicalKey).toBe('tomato-cherry');
   });
 
   it('matches plural form alias', () => {
@@ -52,7 +52,7 @@ describe('matchProduceCanonical', () => {
   it('matches alias contained in longer input (word boundaries)', () => {
     const result = matchProduceCanonical(normalizeName('עגבניות שרי מתוקות מארז'));
     expect(result).not.toBeNull();
-    expect(result!.entry.canonicalKey).toBe('tomato');
+    expect(result!.entry.canonicalKey).toBe('tomato-cherry');
   });
 
   it('matches alias at start of input', () => {

@@ -9,6 +9,7 @@
  * Usage:
  *   npx ts-node src/scripts/backfill-product-ids.ts
  *   npx ts-node src/scripts/backfill-product-ids.ts --dry-run
+ *   npx ts-node src/scripts/backfill-product-ids.ts --force        # re-evaluate already-linked records, clear stale links
  *   npx ts-node src/scripts/backfill-product-ids.ts --chain shufersal
  *   npx ts-node src/scripts/backfill-product-ids.ts --batch-size 500
  */
@@ -23,7 +24,6 @@ import { matchProduceCanonical } from '../data/produce-catalog';
 import { normalizeName } from '../utils/normalize';
 import { SUPPORTED_CHAINS } from '../models/chain-product.model';
 import type { ChainId } from '../models/chain-product.model';
-import type { ProductType } from '../models/product.model';
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -31,6 +31,7 @@ import type { ProductType } from '../models/product.model';
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
+const FORCE_OVERWRITE = args.includes('--force');
 const chainArg = args.find((_, i) => args[i - 1] === '--chain');
 const batchSizeArg = args.find((_, i) => args[i - 1] === '--batch-size');
 const BATCH_SIZE = batchSizeArg ? parseInt(batchSizeArg, 10) : 200;
@@ -60,7 +61,7 @@ function emptyStats(): BackfillStats {
 // ---------------------------------------------------------------------------
 
 async function backfill() {
-  console.log(`[BACKFILL] mode=${DRY_RUN ? 'DRY_RUN' : 'LIVE'} chains=${TARGET_CHAINS.join(',')} batchSize=${BATCH_SIZE}`);
+  console.log(`[BACKFILL] mode=${DRY_RUN ? 'DRY_RUN' : 'LIVE'} force=${FORCE_OVERWRITE} chains=${TARGET_CHAINS.join(',')} batchSize=${BATCH_SIZE}`);
 
   await connectMongo();
 
@@ -95,13 +96,12 @@ async function backfillChain(
 ): Promise<BackfillStats> {
   const stats = emptyStats();
 
-  const totalCount = await ChainProductMongoose.countDocuments({
-    chainId,
-    isActive: true,
-    productId: { $exists: false },
-  });
+  const baseFilter: Record<string, unknown> = { chainId, isActive: true };
+  if (!FORCE_OVERWRITE) baseFilter.productId = { $exists: false };
 
-  console.log(`[BACKFILL] chain=${chainId} unresolved=${totalCount}`);
+  const totalCount = await ChainProductMongoose.countDocuments(baseFilter);
+
+  console.log(`[BACKFILL] chain=${chainId} ${FORCE_OVERWRITE ? 'total' : 'unresolved'}=${totalCount}`);
   stats.total = totalCount;
 
   if (totalCount === 0) return stats;
@@ -110,11 +110,7 @@ async function backfillChain(
   let lastId: mongoose.Types.ObjectId | undefined;
 
   while (processed < totalCount) {
-    const filter: Record<string, unknown> = {
-      chainId,
-      isActive: true,
-      productId: { $exists: false },
-    };
+    const filter: Record<string, unknown> = { ...baseFilter };
     if (lastId) filter._id = { $gt: lastId };
 
     const batch = await ChainProductMongoose.find(filter)
@@ -127,7 +123,7 @@ async function backfillChain(
     const bulkOps: Array<{
       updateOne: {
         filter: { _id: mongoose.Types.ObjectId };
-        update: { $set: { productId: mongoose.Types.ObjectId; productType: ProductType } };
+        update: Record<string, unknown>;
       };
     }> = [];
 
@@ -160,7 +156,10 @@ async function backfillChain(
 
         // STEP 2: No barcode → try produce match
         const produceMatch = matchProduceCanonical(normalizedName);
-        if (produceMatch) {
+        // Use substring check (not token split) to catch Hebrew prefix forms like "בשימורים" matching "שימורים"
+        const isExcluded =
+          produceMatch?.entry.excludeTokens?.some((t) => normalizedName.includes(t)) ?? false;
+        if (produceMatch && !isExcluded) {
           const entry = produceMatch.entry;
           const product = await productRepo.findOrCreateByCanonicalKey({
             canonicalKey: entry.canonicalKey,
@@ -186,7 +185,15 @@ async function backfillChain(
           continue;
         }
 
-        // STEP 3: Unresolved
+        // STEP 3: Unresolved — in force mode, clear any stale productId/productType
+        if (FORCE_OVERWRITE) {
+          bulkOps.push({
+            updateOne: {
+              filter: { _id: doc._id as mongoose.Types.ObjectId },
+              update: { $unset: { productId: '', productType: '' } },
+            },
+          });
+        }
         stats.unresolved++;
       } catch (err) {
         stats.errors++;
