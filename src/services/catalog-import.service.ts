@@ -21,6 +21,9 @@ export interface ChainImportResult {
 
 interface CatalogProvider {
   getLatestFile(): Promise<{ filename: string; rawData: Buffer } | null>;
+  // When false, the provider returns a partial (e.g. store-scoped) snapshot and
+  // chain-wide inactive marking must be skipped to avoid false deactivations.
+  readonly supportsChainWideInactive?: boolean;
 }
 
 const PROVIDERS: Record<ChainId, CatalogProvider> = {
@@ -113,7 +116,10 @@ export class CatalogImportService {
       }
     }
 
-    const inactiveMarked = await this.chainProductRepo.markInactiveExcept(chainId, seenExternalIds);
+    const inactiveMarked =
+      provider.supportsChainWideInactive !== false
+        ? await this.chainProductRepo.markInactiveExcept(chainId, seenExternalIds)
+        : 0;
 
     return {
       chainId,

@@ -18,6 +18,10 @@ export interface ShufersalProviderOptions {
 }
 
 export class ShufersalProvider {
+  // Shufersal files are store-scoped (storeId=413), not a full chain snapshot.
+  // Chain-wide inactive marking must be skipped to avoid deactivating valid products from other stores.
+  readonly supportsChainWideInactive = false;
+
   private readonly categoryId: number;
   private readonly filePrefix: 'PriceFull' | 'PromoFull';
   private readonly storeId: string;
