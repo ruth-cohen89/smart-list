@@ -142,10 +142,16 @@ export class PriceComparisonService {
       const produceResult = await this.matchByProduce(item, chainId);
       if (produceResult) return produceResult;
 
-      return this.matchByName(item, chainId, {
+      const nameResult = await this.matchByName(item, chainId, {
         produceOnly: true,
         excludeTokens: produceMatch.entry.excludeTokens,
       });
+      if (nameResult) return nameResult;
+
+      // Both produce paths failed. If the item has a barcode or productId
+      // (e.g. pre-packaged cherry tomatoes added from a receipt), fall through
+      // to packaged matching below rather than returning null.
+      if (!item.barcode && !item.productId) return null;
     }
 
     // 2. productId — highest priority for packaged products (global product identity)
@@ -298,7 +304,7 @@ export class PriceComparisonService {
     const excludeTokens = produceMatch.entry.excludeTokens ?? [];
     const chainProducts = (await this.chainProductRepo.findByProductId(product.id, chainId)).filter(
       (p) => {
-        if (p.productType !== 'produce') return false;
+        if (p.productType === 'packaged') return false;
         if (excludeTokens.length === 0) return true;
         const name = p.normalizedName ?? '';
         return !excludeTokens.some((t) => name.includes(t));
@@ -354,7 +360,7 @@ export class PriceComparisonService {
 
     let filtered = candidates;
     if (options.produceOnly) {
-      filtered = filtered.filter((p) => p.productType === 'produce');
+      filtered = filtered.filter((p) => p.productType !== 'packaged');
     }
     if (options.excludeTokens && options.excludeTokens.length > 0) {
       filtered = filtered.filter((p) => {

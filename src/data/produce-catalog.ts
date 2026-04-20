@@ -526,6 +526,14 @@ const RAW_CATALOG: RawProduceEntry[] = [
     isWeighted: false,
   },
   {
+    canonicalKey: 'lettuce-lalik',
+    canonicalName: 'לאליק',
+    aliases: ['לאליק', 'חסה לאליק'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
     canonicalKey: 'spinach',
     canonicalName: 'תרד',
     aliases: ['תרד', 'עלי תרד'],
