@@ -298,13 +298,13 @@ export class PriceComparisonService {
       isWeighted: produceMatch.entry.isWeighted,
     });
 
-    // Find chain products linked to this global product; restrict to produce type to
-    // prevent processed items (e.g. tomato paste) from leaking through stale backfill links.
-    // Also filter out chain products whose names contain exclude tokens (e.g. pickled/preserved variants).
+    // Find chain products linked to this global product.
+    // Filter out chain products whose names contain exclude tokens (e.g. pickled/preserved variants).
+    // productType is NOT filtered here: fresh produce in some chains is stored as 'packaged'
+    // because their XML includes barcodes. The canonical product link + excludeTokens are sufficient guards.
     const excludeTokens = produceMatch.entry.excludeTokens ?? [];
     const chainProducts = (await this.chainProductRepo.findByProductId(product.id, chainId)).filter(
       (p) => {
-        if (p.productType === 'packaged') return false;
         if (excludeTokens.length === 0) return true;
         const name = p.normalizedName ?? '';
         return !excludeTokens.some((t) => name.includes(t));
@@ -359,9 +359,8 @@ export class PriceComparisonService {
     }
 
     let filtered = candidates;
-    if (options.produceOnly) {
-      filtered = filtered.filter((p) => p.productType !== 'packaged');
-    }
+    // productType is NOT filtered here: fresh produce in some chains is stored as 'packaged'.
+    // excludeTokens + score threshold are the guards against false positives.
     if (options.excludeTokens && options.excludeTokens.length > 0) {
       filtered = filtered.filter((p) => {
         const name = p.normalizedName ?? '';

@@ -389,8 +389,8 @@ const RAW_CATALOG: RawProduceEntry[] = [
   },
   {
     canonicalKey: 'red-onion',
-    canonicalName: 'בצל סגול',
-    aliases: ['בצל סגול', 'בצל אדום'],
+    canonicalName: 'בצל אדום',
+    aliases: ['בצל אדום', 'בצל סגול'],
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
@@ -507,7 +507,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'יחידה',
     isWeighted: false,
-    excludeTokens: ['ערבית', 'אייסברג'],
+    excludeTokens: ['ערבית', 'אייסברג', 'רוטב'],
   },
   {
     canonicalKey: 'lettuce-arabic',
