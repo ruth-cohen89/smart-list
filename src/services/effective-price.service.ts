@@ -15,18 +15,23 @@ type PriceableProduct = Pick<ChainProduct, 'price' | 'promotions'>;
 export function computeBestEffectivePrice(
   product: PriceableProduct,
   quantity: number,
+  unit?: string,
   now: Date = new Date(),
 ): EffectivePriceResult {
-  const regularTotalPrice = product.price * quantity;
+  // Catalog price for weighted items is always per-KG.
+  // Convert G → KG before all price math. Anything else = no conversion.
+  const effectiveQty = unit === 'G' ? quantity / 1000 : quantity;
+
+  const regularTotalPrice = product.price * effectiveQty;
   const fallback: EffectivePriceResult = {
     regularTotalPrice,
     effectiveTotalPrice: regularTotalPrice,
-    effectiveUnitPrice: quantity > 0 ? regularTotalPrice / quantity : product.price,
+    effectiveUnitPrice: effectiveQty > 0 ? regularTotalPrice / effectiveQty : product.price,
     savings: 0,
     appliedPromotion: null,
   };
 
-  if (quantity <= 0 || product.promotions.length === 0) {
+  if (effectiveQty <= 0 || product.promotions.length === 0) {
     return fallback;
   }
 
@@ -39,7 +44,7 @@ export function computeBestEffectivePrice(
     if (!hasUsablePromotionWindow(promotion)) continue;
     if (!isPromotionActive(now, promotion.startAt, promotion.endAt)) continue;
 
-    const candidate = applyPromotion(product.price, quantity, promotion);
+    const candidate = applyPromotion(product.price, effectiveQty, promotion);
     if (!candidate) continue;
 
     if (candidate.effectiveTotalPrice < best.effectiveTotalPrice) {

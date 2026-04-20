@@ -22,16 +22,19 @@ export interface ItemMatchUpdate {
   selectionSource: SelectionSource;
 }
 
+export type ItemUnit = 'KG' | 'G' | 'UNIT';
+
 export interface ShoppingItem {
   id: string;
   name: string;
   category: string;
   quantity: number;
-  unit?: string;
+  unit?: ItemUnit;
   notes?: string;
   priority?: ItemPriority;
   barcode?: string;
   productId?: string;
+  isWeighted?: boolean;
   createdAt: Date;
   updatedAt: Date;
   // Matching fields (populated when match-items is triggered)

@@ -10,9 +10,9 @@ const itemNameSchema = z.string().trim().min(1).max(80);
 
 const categorySchema = z.string().trim().max(40);
 
-const quantitySchema = z.coerce.number().int().min(1);
+const quantitySchema = z.coerce.number().positive().min(0.001);
 
-const unitSchema = z.string().trim().max(20);
+const unitSchema = z.enum(['KG', 'G', 'UNIT']);
 const notesSchema = z.string().trim().max(200);
 const barcodeSchema = z.string().trim().max(50);
 
@@ -61,9 +61,19 @@ export const createItemSchema = z
     productId: productIdSchema.optional(),
     productGroupId: objectIdSchema.optional(),
     variantId: objectIdSchema.optional(),
+    isWeighted: z.boolean().optional(),
     // purchased intentionally omitted (use toggle endpoint instead)
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.isWeighted === true && data.unit === 'UNIT') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['unit'],
+        message: 'Weighted products cannot use unit "piece"',
+      });
+    }
+  });
 
 export const updateItemSchema = z
   .object({

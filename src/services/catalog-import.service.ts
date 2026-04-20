@@ -100,6 +100,7 @@ export class CatalogImportService {
           price: product.itemPrice,
           quantity: product.quantity,
           unit: product.unitOfMeasure,
+          isWeighted: product.isWeighted,
           lastSeenAt: now,
           productId: resolved?.product.id,
           productType: resolved?.productType,

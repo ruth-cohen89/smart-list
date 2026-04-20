@@ -7,11 +7,12 @@ export interface IShoppingItemDocument extends Document {
   name: string;
   category: string;
   quantity: number;
-  unit?: string;
+  unit?: 'KG' | 'G' | 'UNIT';
   notes?: string;
   priority?: ItemPriority;
   barcode?: string;
   productId?: mongoose.Types.ObjectId;
+  isWeighted?: boolean;
   createdAt: Date;
   updatedAt: Date;
   // Matching fields
@@ -41,12 +42,13 @@ const ShoppingItemSchema = new Schema<IShoppingItemDocument>(
   {
     name: { type: String, required: true, trim: true, minlength: 1, maxlength: 80 },
     category: { type: String, trim: true, maxlength: 40, default: 'other' },
-    quantity: { type: Number, required: true, min: 1 },
-    unit: { type: String, trim: true, maxlength: 20 },
+    quantity: { type: Number, required: true, min: 0.001 },
+    unit: { type: String, enum: ['KG', 'G', 'UNIT'] },
     notes: { type: String, trim: true, maxlength: 200 },
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
     barcode: { type: String, trim: true, maxlength: 50 },
     productId: { type: Schema.Types.ObjectId, ref: 'Product' },
+    isWeighted: { type: Boolean },
     // Matching fields
     rawName: { type: String, trim: true },
     normalizedName: { type: String, trim: true },

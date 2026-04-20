@@ -48,6 +48,8 @@ export interface ChainMatch {
   price: number;
   barcode?: string;
   score: number;
+  isWeighted?: boolean;
+  productType?: string;
 }
 
 export interface GroupMappingResult {
@@ -342,6 +344,8 @@ export class ProductGroupService {
           price: cp.price,
           barcode: cp.barcode,
           score,
+          isWeighted: cp.isWeighted,
+          productType: cp.productType,
         });
       }
     }

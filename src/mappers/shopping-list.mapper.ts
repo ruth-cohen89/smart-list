@@ -14,6 +14,7 @@ const mapItem = (item: IShoppingItemDocument): ShoppingItem => ({
   priority: item.priority,
   barcode: item.barcode,
   productId: item.productId ? String(item.productId) : undefined,
+  isWeighted: item.isWeighted,
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
   rawName: item.rawName,

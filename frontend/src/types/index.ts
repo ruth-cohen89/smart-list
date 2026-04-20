@@ -50,15 +50,17 @@ export interface ChangePasswordPayload {
 
 export type ListStatus = 'active' | 'completed' | 'archived';
 export type ItemPriority = 'low' | 'medium' | 'high';
+export type ItemUnit = 'KG' | 'G' | 'UNIT';
 
 export interface ShoppingItem {
   id: string;
   name: string;
   category: string;
   quantity: number;
-  unit?: string;
+  unit?: ItemUnit;
   notes?: string;
   priority?: ItemPriority;
+  isWeighted?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -90,13 +92,14 @@ export interface CreateItemPayload {
   name: string;
   quantity: number;
   category?: string;
-  unit?: string;
+  unit?: ItemUnit;
   notes?: string;
   priority?: ItemPriority;
   productId?: string;
   barcode?: string;
   productGroupId?: string;
   variantId?: string;
+  isWeighted?: boolean;
 }
 
 // ─── Product Search (legacy — kept for type compat) ─────────────────────────
@@ -145,6 +148,8 @@ export interface ChainMatch {
   price: number;
   barcode?: string;
   score: number;
+  isWeighted?: boolean;
+  productType?: string;
 }
 
 export interface GroupMappingResult {
@@ -157,7 +162,7 @@ export interface UpdateItemPayload {
   name?: string;
   quantity?: number;
   category?: string;
-  unit?: string;
+  unit?: ItemUnit;
   notes?: string;
   priority?: ItemPriority;
 }
@@ -277,6 +282,8 @@ export interface ConfirmMatchesResponse {
 
 export type ChainId = 'shufersal' | 'rami-levy' | 'machsanei-hashuk';
 
+export type PricingAccuracy = 'accurate' | 'approximate';
+
 export interface MatchedBasketItem {
   shoppingItemId: string;
   shoppingItemName: string;
@@ -288,9 +295,11 @@ export interface MatchedBasketItem {
   effectiveTotalPrice: number;
   effectiveUnitPrice: number;
   appliedPromotion: { description: string } | null;
+  pricingAccuracy: PricingAccuracy;
   product: {
     originalName: string;
     price: number;
+    isWeighted?: boolean;
   };
 }
 
@@ -304,6 +313,10 @@ export interface ChainBasket {
   totalPrice: number;
   matchedItems: MatchedBasketItem[];
   unmatchedItems: UnmatchedBasketItem[];
+  hasApproximatePricing: boolean;
+  isComparable: boolean;
+  accurateItemsCount: number;
+  totalItemsCount: number;
 }
 
 export interface ComparisonResult {

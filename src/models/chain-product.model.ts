@@ -47,6 +47,7 @@ export interface ChainProduct {
   unit?: string;
   quantity?: number;
   unitType?: string;
+  isWeighted?: boolean;
   isActive: boolean;
   lastSeenAt: Date;
   imageUrl?: string;
@@ -70,6 +71,7 @@ export interface UpsertChainProductData {
   unit?: string;
   quantity?: number;
   unitType?: string;
+  isWeighted?: boolean;
   lastSeenAt: Date;
   imageUrl?: string;
 }

@@ -15,6 +15,7 @@ export interface IChainProductDocument extends Document {
   unit?: string;
   quantity?: number;
   unitType?: string;
+  isWeighted?: boolean;
   isActive: boolean;
   lastSeenAt: Date;
   imageUrl?: string;
@@ -101,6 +102,7 @@ const ChainProductSchema = new Schema<IChainProductDocument>(
     unit: { type: String, trim: true, maxlength: 30 },
     quantity: { type: Number, min: 0 },
     unitType: { type: String, trim: true, maxlength: 30 },
+    isWeighted: { type: Boolean },
     isActive: { type: Boolean, required: true, default: true },
     lastSeenAt: { type: Date, required: true },
     imageUrl: { type: String, trim: true },

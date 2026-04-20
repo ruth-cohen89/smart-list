@@ -2,7 +2,7 @@
 import { AppError } from '../errors/app-error';
 import { ShoppingListRepository } from '../repositories/shopping-list.repository';
 
-import type { ShoppingList, ShoppingItem, ItemMatchUpdate } from '../models/shopping-list.model';
+import type { ShoppingList, ShoppingItem, ItemMatchUpdate, ItemUnit } from '../models/shopping-list.model';
 import type { BaselineItem } from '../models/consumption-profile.model';
 import type {
   UpdateShoppingListInput,
@@ -64,6 +64,13 @@ export class ShoppingListService {
     input: UpdateItemInput,
   ): Promise<ShoppingList> {
     const active = await this.repo.getOrCreateActiveList(userId);
+
+    if (input.unit === 'UNIT') {
+      const existingItem = active.items.find((i) => i.id === itemId);
+      if (existingItem?.isWeighted) {
+        throw new AppError('Weighted products cannot use unit "piece"', 400);
+      }
+    }
 
     const updated = await this.repo.updateItem(userId, active.id, itemId, input);
     if (!updated) throw new AppError('Item or list not found', 404);
@@ -165,11 +172,12 @@ export class ShoppingListService {
       // Add to active list and track to prevent duplicates within this sync run
       existingNames.add(key);
 
+      const validUnits: ItemUnit[] = ['KG', 'G', 'UNIT'];
       const itemInput: CreateItemInput = {
         name: b.name,
         category: 'other',
         quantity: b.quantity ?? 1,
-        unit: b.unit,
+        unit: validUnits.includes(b.unit as ItemUnit) ? (b.unit as ItemUnit) : undefined,
         priority: 'medium',
       };
 

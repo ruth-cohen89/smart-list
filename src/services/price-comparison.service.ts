@@ -11,6 +11,8 @@ import { SUPPORTED_CHAINS } from '../models/chain-product.model';
 
 export type MatchSource = 'product_id' | 'barcode' | 'produce' | 'name' | 'matched_product';
 
+export type PricingAccuracy = 'accurate' | 'approximate';
+
 export interface MatchedBasketItem {
   shoppingItemId: string;
   shoppingItemName: string;
@@ -23,6 +25,7 @@ export interface MatchedBasketItem {
   effectiveTotalPrice: number;
   effectiveUnitPrice: number;
   appliedPromotion: ProductPromotionSnapshot | null;
+  pricingAccuracy: PricingAccuracy;
 }
 
 export interface UnmatchedBasketItem {
@@ -35,6 +38,10 @@ export interface ChainBasket {
   totalPrice: number;
   matchedItems: MatchedBasketItem[];
   unmatchedItems: UnmatchedBasketItem[];
+  hasApproximatePricing: boolean;
+  isComparable: boolean;
+  accurateItemsCount: number;
+  totalItemsCount: number;
 }
 
 export interface ComparisonResult {
@@ -79,12 +86,16 @@ export class PriceComparisonService {
     for (const item of items) {
       const result = await this.matchItemToChain(item, chainId);
       if (result) {
-        const effectivePrice = computeBestEffectivePrice(result.product, item.quantity);
+        const effectivePrice = computeBestEffectivePrice(result.product, item.quantity, item.unit);
         if (effectivePrice.appliedPromotion) {
           console.log(
-            `[COMPARE] active promo applied chainId=${chainId} itemCode=${result.product.externalId} promotionId=${effectivePrice.appliedPromotion.promotionId} quantity=${item.quantity} total=${effectivePrice.effectiveTotalPrice}`,
+            `[COMPARE] active promo applied chainId=${chainId} itemCode=${result.product.externalId} promotionId=${effectivePrice.appliedPromotion.promotionId} quantity=${item.quantity} unit=${item.unit ?? 'none'} total=${effectivePrice.effectiveTotalPrice}`,
           );
         }
+
+        const isWeighted = result.product.isWeighted ?? (result.product.productType === 'produce');
+        const pricingAccuracy: PricingAccuracy =
+          isWeighted && (!item.unit || item.unit === 'UNIT') ? 'approximate' : 'accurate';
 
         matchedItems.push({
           ...result,
@@ -92,20 +103,34 @@ export class PriceComparisonService {
           effectiveTotalPrice: effectivePrice.effectiveTotalPrice,
           effectiveUnitPrice: effectivePrice.effectiveUnitPrice,
           appliedPromotion: effectivePrice.appliedPromotion,
+          pricingAccuracy,
         });
       } else {
         unmatchedItems.push({ shoppingItemId: item.id, shoppingItemName: item.name });
       }
     }
 
-    const totalPrice = matchedItems.reduce((sum, item) => sum + item.effectiveTotalPrice, 0);
-    return { chainId, totalPrice, matchedItems, unmatchedItems };
+    const accurateItems = matchedItems.filter((i) => i.pricingAccuracy === 'accurate');
+    const totalPrice = accurateItems.reduce((sum, i) => sum + i.effectiveTotalPrice, 0);
+    const hasApproximatePricing = matchedItems.some((i) => i.pricingAccuracy === 'approximate');
+    const isComparable = accurateItems.length > 0;
+
+    return {
+      chainId,
+      totalPrice,
+      matchedItems,
+      unmatchedItems,
+      hasApproximatePricing,
+      isComparable,
+      accurateItemsCount: accurateItems.length,
+      totalItemsCount: matchedItems.length,
+    };
   }
 
   private async matchItemToChain(
     item: ShoppingItem,
     chainId: ChainId,
-  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion'> | null> {
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
     const normalizedItemName = normalizeName(item.rawName ?? item.name);
     const produceMatch = matchProduceCanonical(normalizedItemName);
 
@@ -117,18 +142,10 @@ export class PriceComparisonService {
       const produceResult = await this.matchByProduce(item, chainId);
       if (produceResult) return produceResult;
 
-      const nameResult = await this.matchByName(item, chainId);
-      const excludeTokens = produceMatch.entry.excludeTokens ?? [];
-      if (nameResult && excludeTokens.length > 0) {
-        const candidateName = nameResult.product.normalizedName ?? '';
-        if (excludeTokens.some((t) => candidateName.includes(t))) {
-          console.log(
-            `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=name status=rejected_exclude_token`,
-          );
-          return null;
-        }
-      }
-      return nameResult;
+      return this.matchByName(item, chainId, {
+        produceOnly: true,
+        excludeTokens: produceMatch.entry.excludeTokens,
+      });
     }
 
     // 2. productId — highest priority for packaged products (global product identity)
@@ -209,7 +226,7 @@ export class PriceComparisonService {
   private async resolveMatchedProduct(
     item: ShoppingItem,
     chainId: ChainId,
-  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion'> | null> {
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
     const mp = item.matchedProduct!;
 
     // Try by externalProductCode first
@@ -260,7 +277,7 @@ export class PriceComparisonService {
   private async matchByProduce(
     item: ShoppingItem,
     chainId: ChainId,
-  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion'> | null> {
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
     const normalizedInput = normalizeName(item.rawName ?? item.name);
     const produceMatch = matchProduceCanonical(normalizedInput);
     if (!produceMatch) return null;
@@ -294,19 +311,25 @@ export class PriceComparisonService {
       return null;
     }
 
-    const cheapest = chainProducts.reduce((current, candidate) =>
-      candidate.price < current.price ? candidate : current,
-    );
+    const best = chainProducts.sort((a, b) => {
+      const aW = a.isWeighted ? 0 : 1;
+      const bW = b.isWeighted ? 0 : 1;
+      if (aW !== bW) return aW - bW;
+      const aT = (a.normalizedName ?? '').split(' ').filter(Boolean).length;
+      const bT = (b.normalizedName ?? '').split(' ').filter(Boolean).length;
+      if (aT !== bT) return aT - bT;
+      return a.price - b.price;
+    })[0];
 
     console.log(
-      `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} product="${cheapest.originalName}" status=matched`,
+      `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} product="${best.originalName}" status=matched`,
     );
 
     return {
       shoppingItemId: item.id,
       shoppingItemName: item.name,
       itemQuantity: item.quantity,
-      product: cheapest,
+      product: best,
       matchSource: 'produce',
       score: 1,
       isAmbiguous: false,
@@ -316,7 +339,8 @@ export class PriceComparisonService {
   private async matchByName(
     item: ShoppingItem,
     chainId: ChainId,
-  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion'> | null> {
+    options: { produceOnly?: boolean; excludeTokens?: string[] } = {},
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
     const normalizedInput = normalizeName(item.rawName ?? item.name);
     const inputTokens = tokenSet(normalizedInput);
     const candidates = await this.chainProductRepo.findCandidatesByName(normalizedInput, chainId);
@@ -328,7 +352,19 @@ export class PriceComparisonService {
       return null;
     }
 
-    const scoredCandidates = candidates
+    let filtered = candidates;
+    if (options.produceOnly) {
+      filtered = filtered.filter((p) => p.productType === 'produce');
+    }
+    if (options.excludeTokens && options.excludeTokens.length > 0) {
+      filtered = filtered.filter((p) => {
+        const name = p.normalizedName ?? '';
+        return !options.excludeTokens!.some((t) => name.includes(t));
+      });
+    }
+    if (filtered.length === 0) return null;
+
+    const scoredCandidates = filtered
       .map((product) => ({
         product,
         score: scoreProduct({
@@ -371,7 +407,7 @@ export class PriceComparisonService {
 }
 
 function pickCheapestChain(chains: ChainBasket[]): ChainId | null {
-  const withMatches = chains.filter((chain) => chain.matchedItems.length > 0);
+  const withMatches = chains.filter((chain) => chain.isComparable);
   if (withMatches.length === 0) {
     return null;
   }

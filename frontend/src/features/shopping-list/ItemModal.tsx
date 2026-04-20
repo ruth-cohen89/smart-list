@@ -6,6 +6,7 @@ import type {
   CreateItemPayload,
   UpdateItemPayload,
   ItemPriority,
+  ItemUnit,
   ChainMatch,
   ChainId,
 } from '../../types';
@@ -42,6 +43,8 @@ interface SelectedProduct {
   name: string;
   barcode?: string;
   price: number;
+  isWeighted?: boolean;
+  productType?: string;
 }
 
 /** Flatten mapping results into a flat list with chainId attached */
@@ -67,7 +70,13 @@ function toSelectedProduct(match: ChainMatch & { chainId: string }): SelectedPro
     name: match.name,
     barcode: match.barcode,
     price: match.price,
+    isWeighted: match.isWeighted,
+    productType: match.productType,
   };
+}
+
+function matchIsWeighted(m: ChainMatch): boolean {
+  return m.isWeighted === true || m.productType === 'produce';
 }
 
 function findBestConcreteMatch(selection: GroupSelection): (ChainMatch & { chainId: string }) | null {
@@ -83,7 +92,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [category, setCategory] = useState('');
-  const [unit, setUnit] = useState('');
+  const [unit, setUnit] = useState<ItemUnit>('UNIT');
   const [notes, setNotes] = useState('');
   const [priority, setPriority] = useState<ItemPriority>('medium');
   const [loading, setLoading] = useState(false);
@@ -94,14 +103,14 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
       setName(item.name);
       setQuantity(item.quantity);
       setCategory(item.category ?? '');
-      setUnit(item.unit ?? '');
+      setUnit(item.unit ?? 'UNIT');
       setNotes(item.notes ?? '');
       setPriority(item.priority ?? 'medium');
     } else {
       setName('');
       setQuantity(1);
       setCategory('');
-      setUnit('');
+      setUnit('UNIT');
       setNotes('');
       setPriority('medium');
     }
@@ -116,7 +125,9 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
   // ─── Step 1: group selected (mapping fetched) ─────────────────
 
   const handleGroupSelect = (sel: GroupSelection) => {
+    const selIsWeighted = Object.values(sel.mapping.results).flat().some(matchIsWeighted);
     setSelection(sel);
+    if (selIsWeighted) setUnit((prev) => (prev === 'UNIT' ? 'KG' : prev));
     const bestMatch = sel.selectionMode === 'canonical' ? findBestConcreteMatch(sel) : null;
     setSelectedProduct(bestMatch ? toSelectedProduct(bestMatch) : null);
     if (sel.category && !category) {
@@ -187,8 +198,8 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
             ? name.trim()
             : selectedProduct!.name,
         quantity,
+        unit,
         ...(category && { category: category.trim() }),
-        ...(unit && { unit: unit.trim() }),
         ...(notes && { notes: notes.trim() }),
         priority,
         ...(!isEdit && hasFallback && fallbackProduct?.barcode ? { barcode: fallbackProduct.barcode } : {}),
@@ -196,6 +207,7 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
         ...(concreteProduct?.barcode ? { barcode: concreteProduct.barcode } : {}),
         ...(!isEdit && selection ? { productGroupId: selection.groupId } : {}),
         ...(!isEdit && selection?.variantId ? { variantId: selection.variantId } : {}),
+        ...(isProductWeighted ? { isWeighted: true } : {}),
       };
       await onSave(payload);
       onClose();
@@ -212,6 +224,15 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
   };
 
   // ─── Derived state ────────────────────────────────────────────
+
+  const isProductWeighted =
+    item?.isWeighted === true ||
+    (selectedProduct != null
+      ? selectedProduct.isWeighted === true || selectedProduct.productType === 'produce'
+      : false) ||
+    (selection
+      ? Object.values(selection.mapping.results).flat().some(matchIsWeighted)
+      : false);
 
   const mappedProducts = selection ? flattenMappingResults(selection.mapping.results) : [];
   const hasMappedProducts = mappedProducts.length > 0;
@@ -352,24 +373,31 @@ export default function ItemModal({ isOpen, onClose, onSave, item }: ItemModalPr
             <input
               type="number"
               value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-              min={1}
+              onChange={(e) => setQuantity(Math.max(0.001, parseFloat(e.target.value) || 0.001))}
+              min={0.001}
+              step={0.001}
               required
               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit</label>
-            <input
-              type="text"
+            <select
               value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              maxLength={20}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-              placeholder="kg, pcs…"
-            />
+              onChange={(e) => setUnit(e.target.value as ItemUnit)}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm bg-white"
+            >
+              {!isProductWeighted && <option value="UNIT">Unit</option>}
+              <option value="KG">KG</option>
+              <option value="G">G</option>
+            </select>
           </div>
         </div>
+        <p className="text-xs text-gray-400 -mt-2">
+          {isProductWeighted
+            ? 'This product is sold by weight — only KG or G are allowed.'
+            : 'For produce sold by weight, choose KG or G for accurate price comparison.'}
+        </p>
 
         {/* ─── Category ───────────────────────────────────────── */}
         <div>

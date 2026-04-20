@@ -15,6 +15,7 @@ export const mapChainProduct = (doc: IChainProductDocument): ChainProduct => ({
   unit: doc.unit,
   quantity: doc.quantity,
   unitType: doc.unitType,
+  isWeighted: doc.isWeighted,
   isActive: doc.isActive,
   lastSeenAt: doc.lastSeenAt,
   imageUrl: doc.imageUrl,

@@ -16,6 +16,7 @@ export interface ProduceCatalogEntry {
   unitType: 'ק"ג' | 'יחידה';
   isWeighted: boolean;
   excludeTokens?: string[];
+  matchExcludeTokens?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,7 @@ interface RawProduceEntry {
   unitType: 'ק"ג' | 'יחידה';
   isWeighted: boolean;
   excludeTokens?: string[];
+  matchExcludeTokens?: string[];
 }
 
 const RAW_CATALOG: RawProduceEntry[] = [
@@ -84,6 +86,8 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['ארוז', 'מיץ', 'סחוט', 'ריבה'],
+    matchExcludeTokens: ['מטליות', 'כלים', 'בריח', 'סבון', 'ניקוי'],
   },
   {
     canonicalKey: 'lime',
@@ -308,7 +312,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ'],
+    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ', 'בטעם', 'מגי'],
   },
   {
     canonicalKey: 'tomato-cherry',
@@ -335,7 +339,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['חמוצים', 'חמוץ', 'כבוש', 'כבושים', 'מלפפונון', 'במלח', 'בחומץ', 'שימורים', 'משומר', 'כבושה'],
+    excludeTokens: ['חמוצים', 'חמוץ', 'כבוש', 'כבושים', 'מלפפונון', 'במלח', 'בחומץ', 'שימורים', 'משומר', 'כבושה', 'קורנישון'],
   },
   {
     canonicalKey: 'pepper-red',
@@ -354,6 +358,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     unitType: 'ק"ג',
     isWeighted: true,
     excludeTokens: ['כבוש', 'ממולא', 'שימורים', 'רוטב'],
+    matchExcludeTokens: ['אנגלי', 'טונה', 'שחור', 'לבן', 'מעושן'],
   },
   {
     canonicalKey: 'pepper-yellow',
@@ -441,6 +446,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['צבעוני', 'גמדי', 'מיץ', 'קפוא'],
   },
   {
     canonicalKey: 'zucchini',
@@ -458,7 +464,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['כבוש', 'שרוף', 'ממרח', 'שימורים'],
+    excludeTokens: ['כבוש', 'שרוף', 'ממרח', 'שימורים', 'על האש', 'צלוי'],
   },
   {
     canonicalKey: 'cabbage',
@@ -467,7 +473,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['כבוש', 'חמוץ', 'שימורים'],
+    excludeTokens: ['כבוש', 'חמוץ', 'שימורים', 'סלט'],
   },
   {
     canonicalKey: 'red-cabbage',
@@ -476,7 +482,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['כבוש', 'חמוץ', 'שימורים'],
+    excludeTokens: ['כבוש', 'חמוץ', 'שימורים', 'סלט'],
   },
   {
     canonicalKey: 'cauliflower',
@@ -498,6 +504,23 @@ const RAW_CATALOG: RawProduceEntry[] = [
     canonicalKey: 'lettuce',
     canonicalName: 'חסה',
     aliases: ['חסה', 'חסה מתולתלת', 'חסה רומית'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+    excludeTokens: ['ערבית', 'אייסברג'],
+  },
+  {
+    canonicalKey: 'lettuce-arabic',
+    canonicalName: 'חסה ערבית',
+    aliases: ['חסה ערבית'],
+    category: 'ירק',
+    unitType: 'יחידה',
+    isWeighted: false,
+  },
+  {
+    canonicalKey: 'lettuce-iceberg',
+    canonicalName: 'חסה אייסברג',
+    aliases: ['חסה אייסברג'],
     category: 'ירק',
     unitType: 'יחידה',
     isWeighted: false,
@@ -824,9 +847,12 @@ export interface ProduceMatchResult {
 export function matchProduceCanonical(normalizedName: string): ProduceMatchResult | null {
   if (!normalizedName) return null;
 
+  const isMatchExcluded = (entry: ProduceCatalogEntry) =>
+    (entry.matchExcludeTokens ?? []).some((t) => normalizedName.includes(t));
+
   // 1. Exact full-name match against aliases
   const exactMatch = ALIAS_INDEX.get(normalizedName);
-  if (exactMatch) {
+  if (exactMatch && !isMatchExcluded(exactMatch)) {
     return { entry: exactMatch, matchedAlias: normalizedName };
   }
 
@@ -839,6 +865,7 @@ export function matchProduceCanonical(normalizedName: string): ProduceMatchResul
 
   for (const [alias, entry] of sortedAliases) {
     if (alias.length < 2) continue;
+    if (isMatchExcluded(entry)) continue;
 
     // The alias must appear as a whole-word boundary substring
     const idx = normalizedName.indexOf(alias);
