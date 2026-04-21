@@ -145,6 +145,7 @@ export class PriceComparisonService {
       const nameResult = await this.matchByName(item, chainId, {
         produceOnly: true,
         excludeTokens: produceMatch.entry.excludeTokens,
+        produceAliases: produceMatch.entry.normalizedAliases,
       });
       if (nameResult) return nameResult;
 
@@ -303,11 +304,16 @@ export class PriceComparisonService {
     // productType is NOT filtered here: fresh produce in some chains is stored as 'packaged'
     // because their XML includes barcodes. The canonical product link + excludeTokens are sufficient guards.
     const excludeTokens = produceMatch.entry.excludeTokens ?? [];
+    const normalizedAliases = produceMatch.entry.normalizedAliases;
     const chainProducts = (await this.chainProductRepo.findByProductId(product.id, chainId)).filter(
       (p) => {
-        if (excludeTokens.length === 0) return true;
         const name = p.normalizedName ?? '';
-        return !excludeTokens.some((t) => name.includes(t));
+        if (excludeTokens.some((t) => name.includes(t))) return false;
+        // A genuine produce chain product's name must start with a produce alias.
+        // Guards against false links like "כותש שום", "בורקס תפוחי אדמה", "דאודורנט מלפפון"
+        // that were linked during ingestion because matchProduceCanonical matches any product
+        // containing a produce alias as a whole word, not just at the start.
+        return normalizedAliases.some((alias) => name === alias || name.startsWith(alias + ' '));
       },
     );
     if (chainProducts.length === 0) {
@@ -345,7 +351,7 @@ export class PriceComparisonService {
   private async matchByName(
     item: ShoppingItem,
     chainId: ChainId,
-    options: { produceOnly?: boolean; excludeTokens?: string[] } = {},
+    options: { produceOnly?: boolean; excludeTokens?: string[]; produceAliases?: string[] } = {},
   ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
     const normalizedInput = normalizeName(item.rawName ?? item.name);
     const inputTokens = tokenSet(normalizedInput);
@@ -359,12 +365,16 @@ export class PriceComparisonService {
     }
 
     let filtered = candidates;
-    // productType is NOT filtered here: fresh produce in some chains is stored as 'packaged'.
-    // excludeTokens + score threshold are the guards against false positives.
     if (options.excludeTokens && options.excludeTokens.length > 0) {
       filtered = filtered.filter((p) => {
         const name = p.normalizedName ?? '';
         return !options.excludeTokens!.some((t) => name.includes(t));
+      });
+    }
+    if (options.produceAliases && options.produceAliases.length > 0) {
+      filtered = filtered.filter((p) => {
+        const name = p.normalizedName ?? '';
+        return options.produceAliases!.some((alias) => name === alias || name.startsWith(alias + ' '));
       });
     }
     if (filtered.length === 0) return null;

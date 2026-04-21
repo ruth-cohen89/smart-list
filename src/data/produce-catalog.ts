@@ -86,7 +86,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'פרי',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['ארוז', 'מיץ', 'סחוט', 'ריבה'],
+    excludeTokens: ['ארוז', 'מיץ', 'סחוט', 'ריבה', 'סוכריות'],
     matchExcludeTokens: ['מטליות', 'כלים', 'בריח', 'סבון', 'ניקוי'],
   },
   {
@@ -312,7 +312,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ', 'בטעם', 'מגי'],
+    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ', 'בטעם', 'מגי', 'מקולפות', 'גרוסות', 'מרוסקות', 'מרוסק'],
   },
   {
     canonicalKey: 'tomato-cherry',
@@ -340,6 +340,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     unitType: 'ק"ג',
     isWeighted: true,
     excludeTokens: ['חמוצים', 'חמוץ', 'כבוש', 'כבושים', 'מלפפונון', 'במלח', 'בחומץ', 'שימורים', 'משומר', 'כבושה', 'קורנישון'],
+    matchExcludeTokens: ['קרם', 'ג\'ל', 'דאודורנט', 'סבון', 'שמפו', 'לחות', 'ניקוי', 'תרסיס'],
   },
   {
     canonicalKey: 'pepper-red',
@@ -411,7 +412,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['כבוש', 'בשמן', 'קלוי', 'אבקת', 'ממרח', 'שימורים'],
+    excludeTokens: ['כבוש', 'בשמן', 'קלוי', 'אבקת', 'ממרח', 'שימורים', 'כותש'],
   },
   {
     canonicalKey: 'potato',
@@ -420,7 +421,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['פירה', 'צ\'יפס', 'קפוא', 'אדום'],
+    excludeTokens: ['פירה', 'צ\'יפס', 'קפוא', 'אדום', 'בורקס'],
   },
   {
     canonicalKey: 'potato-red',

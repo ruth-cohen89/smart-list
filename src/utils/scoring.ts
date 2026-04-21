@@ -141,7 +141,7 @@ export function scoreProduct(opts: ScoreProductOptions): number {
   //   BUT "מקציף חלב" has the input token in non-leading position,
   //   while "חלב תנובה" has it leading — position bonus below handles this.
   const extraRatio = candidateTokens.size > 0 ? extraTokens / candidateTokens.size : 0;
-  const extraPenalty = extraRatio * 0.35;
+  const extraPenalty = extraRatio * 0.55;
   score -= extraPenalty;
 
   // --- Step 3: Position bonus — input token appears at start of product name ---
