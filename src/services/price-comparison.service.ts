@@ -3,7 +3,12 @@ import { ChainProductRepository } from '../repositories/chain-product.repository
 import { normalizeName } from '../utils/normalize';
 import { tokenSet, scoreProduct } from '../utils/scoring';
 import { computeBestEffectivePrice } from './effective-price.service';
-import { matchProduceCanonical } from '../data/produce-catalog';
+import {
+  matchProduceCanonical,
+  PRODUCE_HARD_EXCLUDE_TOKENS,
+  PRODUCE_SUBTYPE_TOKENS,
+  type ProduceMatchResult,
+} from '../data/produce-catalog';
 import { ProductRepository } from '../repositories/product.repository';
 import type { ShoppingItem } from '../models/shopping-list.model';
 import type { ChainProduct, ChainId, ProductPromotionSnapshot } from '../models/chain-product.model';
@@ -131,28 +136,42 @@ export class PriceComparisonService {
     item: ShoppingItem,
     chainId: ChainId,
   ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
-    const normalizedItemName = normalizeName(item.rawName ?? item.name);
-    const produceMatch = matchProduceCanonical(normalizedItemName);
+    // Produce detection uses item.name — NOT rawName.
+    //
+    // rawName comes from receipt OCR and can be a completely unrelated product
+    // (e.g. rawName="בייגלה שומשום" for a "שום" list entry, or
+    //       rawName="פטל לימון TWO 40 סטיק" for a "לימון" entry).
+    // Using rawName causes two bugs:
+    //   1. matchProduceCanonical misses the produce intent (שום not whole-word in שומשום)
+    //   2. After produce path fails, barcode/name fallback matches the receipt product
+    //
+    // item.name is the user-facing canonical name and is the correct signal.
+    const produceMatch = matchProduceCanonical(normalizeName(item.name));
 
-    // 1. Produce items — run produce matching first, bypassing any stale
-    //    productId/barcode/matchedProduct on the shopping list item.
-    //    If produce matching finds no chain product, allow a safe name fallback
-    //    but reject candidates that match produce exclude tokens (e.g. pickled/preserved variants).
+    // 1. Produce items — run produce-specific matching.
+    //    Never fall through to barcode/productId/name-packaged matching:
+    //    a produce item showing "not found" is correct; matching the wrong
+    //    packaged product (the receipt barcode) is not.
     if (produceMatch) {
-      const produceResult = await this.matchByProduce(item, chainId);
+      const produceResult = await this.matchByProduce(item, chainId, produceMatch);
       if (produceResult) return produceResult;
 
       const nameResult = await this.matchByName(item, chainId, {
         produceOnly: true,
-        excludeTokens: produceMatch.entry.excludeTokens,
+        excludeTokens: [
+          ...(produceMatch.entry.excludeTokens ?? []),
+          ...(produceMatch.entry.matchExcludeTokens ?? []),
+        ],
         produceAliases: produceMatch.entry.normalizedAliases,
+        // Search by item.name, not rawName — rawName is a receipt product and would
+        // return wrong candidates (e.g. "תפוציפס בטעם בטטה" for a "בטטה" item).
+        normalizedQueryOverride: normalizeName(item.name),
       });
       if (nameResult) return nameResult;
 
-      // Both produce paths failed. If the item has a barcode or productId
-      // (e.g. pre-packaged cherry tomatoes added from a receipt), fall through
-      // to packaged matching below rather than returning null.
-      if (!item.barcode && !item.productId) return null;
+      // Both produce paths failed — return null.
+      // Do NOT fall through to barcode / productId / name matching.
+      return null;
     }
 
     // 2. productId — highest priority for packaged products (global product identity)
@@ -281,13 +300,41 @@ export class PriceComparisonService {
     return null;
   }
 
+  /**
+   * Classify a chain-product candidate for produce matching.
+   *
+   * Returns:
+   *  'excluded' — never a fresh-produce match (processed food, frozen, branded, etc.)
+   *  'subtype'  — a specific variety (גזר סגול, לימון בלאדי, etc.) — only used when
+   *               the user explicitly requested that subtype
+   *  'base'     — plain fresh produce — always preferred
+   *
+   * Checks applied (in order):
+   *  1. Latin characters in the normalizedName → branded/packaged product
+   *  2. PRODUCE_HARD_EXCLUDE_TOKENS (frozen forms, processed foods, etc.)
+   *  3. Per-entry excludeTokens (pickled, canned sauce, juice, etc.)
+   *  4. PRODUCE_SUBTYPE_TOKENS (specific variety/color indicators)
+   */
+  private classifyProduceCandidate(
+    normalizedName: string,
+    entryExcludeTokens: readonly string[],
+  ): 'base' | 'subtype' | 'excluded' {
+    // Latin letters → branded / packaged product (e.g. "עגבניות שלמות livato", "פטל לימון two 40 סטיק")
+    if (/[a-z]/.test(normalizedName)) return 'excluded';
+    if (PRODUCE_HARD_EXCLUDE_TOKENS.some((t) => normalizedName.includes(t))) return 'excluded';
+    if (entryExcludeTokens.some((t) => normalizedName.includes(t))) return 'excluded';
+    if (PRODUCE_SUBTYPE_TOKENS.some((t) => normalizedName.includes(t))) return 'subtype';
+    return 'base';
+  }
+
   private async matchByProduce(
     item: ShoppingItem,
     chainId: ChainId,
+    produceMatch: ProduceMatchResult,
   ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
-    const normalizedInput = normalizeName(item.rawName ?? item.name);
-    const produceMatch = matchProduceCanonical(normalizedInput);
-    if (!produceMatch) return null;
+    // Always use item.name for produce logic — rawName is the original receipt product
+    // and is irrelevant for determining which fresh produce to match.
+    const normalizedInput = normalizeName(item.name);
 
     // Find or create global product for this produce
     const product = await this.productRepo.findOrCreateByCanonicalKey({
@@ -299,31 +346,59 @@ export class PriceComparisonService {
       isWeighted: produceMatch.entry.isWeighted,
     });
 
-    // Find chain products linked to this global product.
-    // Filter out chain products whose names contain exclude tokens (e.g. pickled/preserved variants).
-    // productType is NOT filtered here: fresh produce in some chains is stored as 'packaged'
-    // because their XML includes barcodes. The canonical product link + excludeTokens are sufficient guards.
-    const excludeTokens = produceMatch.entry.excludeTokens ?? [];
+    const entryExcludeTokens = produceMatch.entry.excludeTokens ?? [];
     const normalizedAliases = produceMatch.entry.normalizedAliases;
-    const chainProducts = (await this.chainProductRepo.findByProductId(product.id, chainId)).filter(
+
+    // Alias anchor: name must start with a produce alias.
+    // Guards against false links (e.g. "כותש שום", "דאודורנט מלפפון") created during
+    // ingestion when matchProduceCanonical matched the alias as a whole-word substring.
+    const linked = (await this.chainProductRepo.findByProductId(product.id, chainId)).filter(
       (p) => {
         const name = p.normalizedName ?? '';
-        if (excludeTokens.some((t) => name.includes(t))) return false;
-        // A genuine produce chain product's name must start with a produce alias.
-        // Guards against false links like "כותש שום", "בורקס תפוחי אדמה", "דאודורנט מלפפון"
-        // that were linked during ingestion because matchProduceCanonical matches any product
-        // containing a produce alias as a whole word, not just at the start.
         return normalizedAliases.some((alias) => name === alias || name.startsWith(alias + ' '));
       },
     );
-    if (chainProducts.length === 0) {
+
+    if (linked.length === 0) {
       console.log(
         `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} status=no_chain_product`,
       );
       return null;
     }
 
-    const best = chainProducts.sort((a, b) => {
+    // Classify every linked candidate
+    const base: typeof linked = [];
+    const subtype: typeof linked = [];
+    for (const p of linked) {
+      const cls = this.classifyProduceCandidate(p.normalizedName ?? '', entryExcludeTokens);
+      if (cls === 'base') base.push(p);
+      else if (cls === 'subtype') subtype.push(p);
+      // 'excluded' → silently dropped
+    }
+
+    // Select candidate pool:
+    //   - Always prefer base candidates.
+    //   - Allow subtypes only when the user's query itself contains a subtype token
+    //     (e.g. user asked for "גזר סגול" — inputContainsSubtype=true).
+    //   - If neither condition is met, return null instead of a wrong match.
+    const inputContainsSubtype = PRODUCE_SUBTYPE_TOKENS.some((t) => normalizedInput.includes(t));
+    let candidates: typeof linked;
+    if (base.length > 0) {
+      candidates = base;
+    } else if (inputContainsSubtype && subtype.length > 0) {
+      candidates = subtype;
+    } else {
+      console.log(
+        `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} ` +
+          `base=0 subtype=${subtype.length} inputSubtype=${inputContainsSubtype} status=no_clean_candidate`,
+      );
+      return null;
+    }
+
+    // Sort: weighted (sold by weight) first, then fewest name tokens, then cheapest.
+    // In chains where fresh produce is stored as productType='packaged' (Shufersal),
+    // isWeighted is unreliable, so token count is the primary tiebreaker.
+    const best = candidates.sort((a, b) => {
       const aW = a.isWeighted ? 0 : 1;
       const bW = b.isWeighted ? 0 : 1;
       if (aW !== bW) return aW - bW;
@@ -351,9 +426,16 @@ export class PriceComparisonService {
   private async matchByName(
     item: ShoppingItem,
     chainId: ChainId,
-    options: { produceOnly?: boolean; excludeTokens?: string[]; produceAliases?: string[] } = {},
+    options: {
+      produceOnly?: boolean;
+      excludeTokens?: string[];
+      produceAliases?: string[];
+      // Produce fallback passes item.name here so the DB search uses the user's
+      // intended produce name, not the rawName (which is an unrelated receipt product).
+      normalizedQueryOverride?: string;
+    } = {},
   ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
-    const normalizedInput = normalizeName(item.rawName ?? item.name);
+    const normalizedInput = options.normalizedQueryOverride ?? normalizeName(item.rawName ?? item.name);
     const inputTokens = tokenSet(normalizedInput);
     const candidates = await this.chainProductRepo.findCandidatesByName(normalizedInput, chainId);
 
@@ -372,10 +454,30 @@ export class PriceComparisonService {
       });
     }
     if (options.produceAliases && options.produceAliases.length > 0) {
+      // Alias anchor: name must start with a produce alias.
       filtered = filtered.filter((p) => {
         const name = p.normalizedName ?? '';
         return options.produceAliases!.some((alias) => name === alias || name.startsWith(alias + ' '));
       });
+
+      // Apply the same classification as matchByProduce:
+      // excluded (Latin, frozen, processed) → dropped entirely
+      // subtype → only kept when the user's query contains a subtype token
+      const inputContainsSubtype = PRODUCE_SUBTYPE_TOKENS.some((t) => normalizedInput.includes(t));
+      const base: typeof filtered = [];
+      const subtype: typeof filtered = [];
+      for (const p of filtered) {
+        const cls = this.classifyProduceCandidate(p.normalizedName ?? '', options.excludeTokens ?? []);
+        if (cls === 'base') base.push(p);
+        else if (cls === 'subtype') subtype.push(p);
+      }
+      if (base.length > 0) {
+        filtered = base;
+      } else if (inputContainsSubtype && subtype.length > 0) {
+        filtered = subtype;
+      } else {
+        filtered = [];
+      }
     }
     if (filtered.length === 0) return null;
 

@@ -312,7 +312,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ', 'בטעם', 'מגי', 'מקולפות', 'גרוסות', 'מרוסקות', 'מרוסק'],
+    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ', 'בטעם', 'מגי', 'מקולפות', 'גרוסות', 'מרוסקות', 'מרוסק', 'שרי', 'תמר', 'אשכולות'],
   },
   {
     canonicalKey: 'tomato-cherry',
@@ -340,7 +340,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     unitType: 'ק"ג',
     isWeighted: true,
     excludeTokens: ['חמוצים', 'חמוץ', 'כבוש', 'כבושים', 'מלפפונון', 'במלח', 'בחומץ', 'שימורים', 'משומר', 'כבושה', 'קורנישון'],
-    matchExcludeTokens: ['קרם', 'ג\'ל', 'דאודורנט', 'סבון', 'שמפו', 'לחות', 'ניקוי', 'תרסיס'],
+    matchExcludeTokens: ['קרם', 'ג\'ל', 'דאודורנט', 'סבון', 'שמפו', 'לחות', 'ניקוי', 'תרסיס', 'בייבי'],
   },
   {
     canonicalKey: 'pepper-red',
@@ -358,7 +358,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['כבוש', 'ממולא', 'שימורים', 'רוטב'],
+    excludeTokens: ['כבוש', 'ממולא', 'שימורים', 'רוטב', 'חריף', 'יבש'],
     matchExcludeTokens: ['אנגלי', 'טונה', 'שחור', 'לבן', 'מעושן'],
   },
   {
@@ -391,7 +391,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
   {
     canonicalKey: 'red-onion',
     canonicalName: 'בצל אדום',
-    aliases: ['בצל אדום', 'בצל סגול'],
+    aliases: ['בצל אדום', 'בצל סגול', 'בצל יבש אדום'],
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
@@ -412,7 +412,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['כבוש', 'בשמן', 'קלוי', 'אבקת', 'ממרח', 'שימורים', 'כותש'],
+    excludeTokens: ['כבוש', 'בשמן', 'קלוי', 'אבקת', 'ממרח', 'שימורים', 'כותש', 'גבישי', 'כתוש'],
   },
   {
     canonicalKey: 'potato',
@@ -465,7 +465,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['כבוש', 'שרוף', 'ממרח', 'שימורים', 'על האש', 'צלוי'],
+    excludeTokens: ['כבוש', 'שרוף', 'ממרח', 'שימורים', 'על האש', 'צלוי', 'פיקנטי', 'במיונז', 'בטחינה', 'טעם'],
   },
   {
     canonicalKey: 'cabbage',
@@ -839,6 +839,52 @@ const { entries: PRODUCE_CATALOG, aliasIndex: ALIAS_INDEX } = buildCatalog();
 // ---------------------------------------------------------------------------
 
 export { PRODUCE_CATALOG };
+
+// ---------------------------------------------------------------------------
+// Produce-matching token lists — used by price-comparison ranking
+// ---------------------------------------------------------------------------
+
+/**
+ * Hard-exclude: products whose normalizedName contains any of these tokens
+ * can never be fresh produce, regardless of what global product they're linked to.
+ *
+ * Covers frozen forms explicitly because Hebrew has multiple conjugations
+ * (קפוא/קפואה/קפואים/קפואות, מוקפא/מוקפאת/מוקפאים/מוקפאות) and a single
+ * token check on "קפוא" would miss "כרובית מוקפאת", "תירס קפואים", etc.
+ */
+export const PRODUCE_HARD_EXCLUDE_TOKENS: readonly string[] = [
+  // Processed/snack foods
+  'בורקס', 'תפוציפס', 'חטיף', 'ממרח', 'פיקנטי', 'בטחינה', 'במיונז', 'כתוש', 'גבישי',
+  // Frozen — all Hebrew conjugations (masculine/feminine, singular/plural, pa'al/huf'al)
+  'קפוא', 'קפואה', 'קפואים', 'קפואות',
+  'מוקפא', 'מוקפאת', 'מוקפאים', 'מוקפאות',
+  // Canned "whole X" — almost always canned in Israeli retail context
+  'שלמות',
+  // Cosmetics / cleaning (belt-and-suspenders alongside matchExcludeTokens)
+  'ריח', 'בישום',
+];
+
+/**
+ * Subtype tokens: products containing any of these are a specific variety/variant.
+ * When the user's query does NOT itself contain a subtype token (they asked for
+ * plain "גזר", not "גזר סגול"), we prefer base candidates.  If only subtype
+ * candidates remain, return null rather than a wrong-variant match.
+ *
+ * Color words (סגול, צהוב) are included because in Israeli retail:
+ *   גזר סגול = purple carrot (specific variety)
+ *   גזר צהוב = yellow carrot (specific variety)
+ * When the user asked for "גזר" they almost certainly want the standard orange carrot.
+ * For canonical entries like "גמבה אדומה" the entry's alias already includes "אדום",
+ * so inputContainsSubtype=true and subtype filtering is skipped correctly.
+ */
+export const PRODUCE_SUBTYPE_TOKENS: readonly string[] = [
+  // Named varieties
+  'שרי', 'בייבי', 'בלאדי', 'פרסי',
+  // Specific colors that indicate a non-default variety
+  'סגול', 'צהוב',
+  // Packaging / processing state
+  'חריף', 'יבש', 'ארוז',
+];
 
 export interface ProduceMatchResult {
   entry: ProduceCatalogEntry;
