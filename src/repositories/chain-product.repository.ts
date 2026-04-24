@@ -76,6 +76,21 @@ export class ChainProductRepository {
     return docs.map(mapChainProduct);
   }
 
+  async findByProduceAliases(chainId: ChainId, normalizedAliases: string[]): Promise<ChainProduct[]> {
+    if (normalizedAliases.length === 0) return [];
+    const aliasPatterns = normalizedAliases.map(
+      (a) => `(^|\\s)${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`,
+    );
+    const docs = await ChainProductMongoose.find({
+      chainId,
+      isActive: true,
+      normalizedName: { $regex: aliasPatterns.join('|'), $options: 'i' },
+    })
+      .limit(100)
+      .lean();
+    return docs.map(mapChainProduct);
+  }
+
   async findByBarcode(barcode: string, chainId?: ChainId): Promise<ChainProduct[]> {
     const filter: Record<string, unknown> = { barcode, isActive: true };
     if (chainId) {

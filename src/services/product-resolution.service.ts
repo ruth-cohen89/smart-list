@@ -31,18 +31,9 @@ export class ProductResolutionService {
   async resolve(parsed: ParsedProduct): Promise<ResolvedProduct | null> {
     const normalizedName = normalizeName(parsed.itemName);
 
-    // STEP 1: Barcode → packaged
-    if (parsed.barcode) {
-      const product = await this.productRepo.findOrCreateByBarcode({
-        barcode: parsed.barcode,
-        canonicalName: cleanCanonicalName(parsed.itemName),
-        normalizedName,
-        brand: parsed.manufacturerName,
-      });
-      return { product, productType: 'packaged' };
-    }
-
-    // STEP 2: No barcode → try produce match
+    // STEP 1: Produce catalog match takes priority over barcode.
+    // Shufersal uses 13-digit weight-embedded EAN-13 codes even for fresh produce,
+    // so checking produce first prevents those items from being stored as packaged.
     const produceMatch = matchProduceCanonical(normalizedName);
     if (produceMatch) {
       const entry = produceMatch.entry;
@@ -55,6 +46,17 @@ export class ProductResolutionService {
         isWeighted: entry.isWeighted,
       });
       return { product, productType: 'produce' };
+    }
+
+    // STEP 2: No produce match → try barcode (packaged product)
+    if (parsed.barcode) {
+      const product = await this.productRepo.findOrCreateByBarcode({
+        barcode: parsed.barcode,
+        canonicalName: cleanCanonicalName(parsed.itemName),
+        normalizedName,
+        brand: parsed.manufacturerName,
+      });
+      return { product, productType: 'packaged' };
     }
 
     // STEP 3: Unresolved

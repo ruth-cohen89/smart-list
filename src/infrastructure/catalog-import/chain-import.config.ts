@@ -41,4 +41,10 @@ export const CHAIN_IMPORT_CONFIGS: Record<ChainId, ChainImportConfig> = {
     targetStoreId: '97',
     fileTypePrefix: 'PriceFull',
   },
+  'tiv-taam': {
+    chainId: 'tiv-taam',
+    listingUrl: 'ftp://url.retail.publishedprices.co.il/',
+    targetStoreId: '502',
+    fileTypePrefix: 'PriceFull',
+  },
 };

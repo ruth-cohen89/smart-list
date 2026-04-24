@@ -153,25 +153,9 @@ export class PriceComparisonService {
     //    a produce item showing "not found" is correct; matching the wrong
     //    packaged product (the receipt barcode) is not.
     if (produceMatch) {
-      const produceResult = await this.matchByProduce(item, chainId, produceMatch);
-      if (produceResult) return produceResult;
-
-      const nameResult = await this.matchByName(item, chainId, {
-        produceOnly: true,
-        excludeTokens: [
-          ...(produceMatch.entry.excludeTokens ?? []),
-          ...(produceMatch.entry.matchExcludeTokens ?? []),
-        ],
-        produceAliases: produceMatch.entry.normalizedAliases,
-        // Search by item.name, not rawName — rawName is a receipt product and would
-        // return wrong candidates (e.g. "תפוציפס בטעם בטטה" for a "בטטה" item).
-        normalizedQueryOverride: normalizeName(item.name),
-      });
-      if (nameResult) return nameResult;
-
-      // Both produce paths failed — return null.
-      // Do NOT fall through to barcode / productId / name matching.
-      return null;
+      // Produce items use ONLY the produce pipeline — never barcode / productId / name matching.
+      // "Not found" is always better than a wrong packaged-product match.
+      return this.matchByProduce(item, chainId, produceMatch);
     }
 
     // 2. productId — highest priority for packaged products (global product identity)
@@ -332,11 +316,8 @@ export class PriceComparisonService {
     chainId: ChainId,
     produceMatch: ProduceMatchResult,
   ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
-    // Always use item.name for produce logic — rawName is the original receipt product
-    // and is irrelevant for determining which fresh produce to match.
     const normalizedInput = normalizeName(item.name);
 
-    // Find or create global product for this produce
     const product = await this.productRepo.findOrCreateByCanonicalKey({
       canonicalKey: produceMatch.entry.canonicalKey,
       canonicalName: produceMatch.entry.canonicalName,
@@ -346,18 +327,31 @@ export class PriceComparisonService {
       isWeighted: produceMatch.entry.isWeighted,
     });
 
-    const entryExcludeTokens = produceMatch.entry.excludeTokens ?? [];
+    const entryExcludeTokens = [
+      ...(produceMatch.entry.excludeTokens ?? []),
+      ...(produceMatch.entry.matchExcludeTokens ?? []),
+    ];
     const normalizedAliases = produceMatch.entry.normalizedAliases;
 
-    // Alias anchor: name must start with a produce alias.
-    // Guards against false links (e.g. "כותש שום", "דאודורנט מלפפון") created during
-    // ingestion when matchProduceCanonical matched the alias as a whole-word substring.
-    const linked = (await this.chainProductRepo.findByProductId(product.id, chainId)).filter(
-      (p) => {
-        const name = p.normalizedName ?? '';
-        return normalizedAliases.some((alias) => name === alias || name.startsWith(alias + ' '));
-      },
-    );
+    // Source 1: productId-linked candidates.
+    // Alias anchor: name must start with a produce alias — guards against false ingestion
+    // links (e.g. "כותש שום") where the alias matched mid-name during import.
+    let linked = (await this.chainProductRepo.findByProductId(product.id, chainId)).filter((p) => {
+      const name = p.normalizedName ?? '';
+      return normalizedAliases.some((alias) => name === alias || name.startsWith(alias + ' '));
+    });
+
+    // Source 2: alias-scoped query — whole-word match anywhere in normalizedName.
+    // Does NOT filter by productType to avoid relying on consistent DB tagging.
+    // classifyProduceCandidate + scoring below are the gates against packaged items.
+    if (linked.length === 0) {
+      linked = await this.chainProductRepo.findByProduceAliases(chainId, normalizedAliases);
+      if (linked.length > 0) {
+        console.log(
+          `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} status=using_alias_candidates linked=${linked.length}`,
+        );
+      }
+    }
 
     if (linked.length === 0) {
       console.log(
@@ -366,7 +360,7 @@ export class PriceComparisonService {
       return null;
     }
 
-    // Classify every linked candidate
+    // Strict pre-scoring filter: reject Latin (branded), frozen, processed, per-entry excludes.
     const base: typeof linked = [];
     const subtype: typeof linked = [];
     for (const p of linked) {
@@ -376,11 +370,6 @@ export class PriceComparisonService {
       // 'excluded' → silently dropped
     }
 
-    // Select candidate pool:
-    //   - Always prefer base candidates.
-    //   - Allow subtypes only when the user's query itself contains a subtype token
-    //     (e.g. user asked for "גזר סגול" — inputContainsSubtype=true).
-    //   - If neither condition is met, return null instead of a wrong match.
     const inputContainsSubtype = PRODUCE_SUBTYPE_TOKENS.some((t) => normalizedInput.includes(t));
     let candidates: typeof linked;
     if (base.length > 0) {
@@ -395,19 +384,35 @@ export class PriceComparisonService {
       return null;
     }
 
-    // Sort: weighted (sold by weight) first, then fewest name tokens, then cheapest.
-    // In chains where fresh produce is stored as productType='packaged' (Shufersal),
-    // isWeighted is unreliable, so token count is the primary tiebreaker.
-    const best = candidates.sort((a, b) => {
-      const aW = a.isWeighted ? 0 : 1;
-      const bW = b.isWeighted ? 0 : 1;
-      if (aW !== bW) return aW - bW;
-      const aT = (a.normalizedName ?? '').split(' ').filter(Boolean).length;
-      const bT = (b.normalizedName ?? '').split(' ').filter(Boolean).length;
-      if (aT !== bT) return aT - bT;
-      return a.price - b.price;
-    })[0];
+    // Token-overlap scoring — pure recall (intersection / inputTokens.size).
+    // No char-bigram fallback. Require ≥0.7 to reject weak partial matches.
+    const inputTokens = tokenSet(normalizedInput);
+    const scored = candidates
+      .map((p) => {
+        const candidateTokens = tokenSet(p.normalizedName ?? '');
+        const intersection = [...inputTokens].filter((t) => candidateTokens.has(t)).length;
+        const score = inputTokens.size > 0 ? intersection / inputTokens.size : 0;
+        return { p, score };
+      })
+      .filter((c) => c.score >= 0.7)
+      .sort((a, b) => {
+        const aW = a.p.isWeighted ? 0 : 1;
+        const bW = b.p.isWeighted ? 0 : 1;
+        if (aW !== bW) return aW - bW;
+        const aT = (a.p.normalizedName ?? '').split(' ').filter(Boolean).length;
+        const bT = (b.p.normalizedName ?? '').split(' ').filter(Boolean).length;
+        if (aT !== bT) return aT - bT;
+        return a.p.price - b.p.price;
+      });
 
+    if (scored.length === 0) {
+      console.log(
+        `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} status=no_scored_match`,
+      );
+      return null;
+    }
+
+    const best = scored[0].p;
     console.log(
       `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} product="${best.originalName}" status=matched`,
     );

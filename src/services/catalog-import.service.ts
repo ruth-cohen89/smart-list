@@ -7,6 +7,7 @@ import { normalizeName } from '../utils/normalize';
 import { ramiLevyProvider } from '../infrastructure/catalog-import/providers/rami-levy.provider';
 import { machsaneiHashukProvider } from '../infrastructure/catalog-import/providers/machsanei-hashuk.provider';
 import { ShufersalProvider } from '../infrastructure/catalog-import/providers/shufersal.provider';
+import { tivTaamProvider } from '../infrastructure/catalog-import/providers/tiv-taam.provider';
 import { ProductResolutionService } from './product-resolution.service';
 
 export interface ChainImportResult {
@@ -30,6 +31,7 @@ const PROVIDERS: Record<ChainId, CatalogProvider> = {
   'rami-levy': ramiLevyProvider,
   'machsanei-hashuk': machsaneiHashukProvider,
   shufersal: new ShufersalProvider(),
+  'tiv-taam': tivTaamProvider,
 };
 
 export class CatalogImportService {

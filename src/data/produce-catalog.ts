@@ -312,7 +312,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ', 'בטעם', 'מגי', 'מקולפות', 'גרוסות', 'מרוסקות', 'מרוסק', 'שרי', 'תמר', 'אשכולות'],
+    excludeTokens: ['רסק', 'שימורים', 'קטשופ', 'רוטב', 'מיובשות', 'מרק', 'פחית', 'מיץ', 'בטעם', 'מגי', 'מקולפות', 'גרוסות', 'מרוסקות', 'מרוסק', 'שרי', 'תמר', 'אשכולות', 'חתוכות', 'קוביות', 'מחית', 'תרכיז', 'פסטו'],
   },
   {
     canonicalKey: 'tomato-cherry',
@@ -340,7 +340,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     unitType: 'ק"ג',
     isWeighted: true,
     excludeTokens: ['חמוצים', 'חמוץ', 'כבוש', 'כבושים', 'מלפפונון', 'במלח', 'בחומץ', 'שימורים', 'משומר', 'כבושה', 'קורנישון'],
-    matchExcludeTokens: ['קרם', 'ג\'ל', 'דאודורנט', 'סבון', 'שמפו', 'לחות', 'ניקוי', 'תרסיס', 'בייבי'],
+    matchExcludeTokens: ['קרם', 'ג\'ל', 'דאודורנט', 'סבון', 'שמפו', 'לחות', 'ניקוי', 'תרסיס', 'בייבי', 'מסכת', 'מרכך', 'רחצה'],
   },
   {
     canonicalKey: 'pepper-red',
@@ -465,7 +465,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
-    excludeTokens: ['כבוש', 'שרוף', 'ממרח', 'שימורים', 'על האש', 'צלוי', 'פיקנטי', 'במיונז', 'בטחינה', 'טעם'],
+    excludeTokens: ['כבוש', 'שרוף', 'ממרח', 'שימורים', 'על האש', 'צלוי', 'פיקנטי', 'במיונז', 'בטחינה', 'טעם', 'סלט'],
   },
   {
     canonicalKey: 'cabbage',
@@ -500,6 +500,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,
+    excludeTokens: ['שניצל'],
   },
   {
     canonicalKey: 'lettuce',
@@ -854,7 +855,7 @@ export { PRODUCE_CATALOG };
  */
 export const PRODUCE_HARD_EXCLUDE_TOKENS: readonly string[] = [
   // Processed/snack foods
-  'בורקס', 'תפוציפס', 'חטיף', 'ממרח', 'פיקנטי', 'בטחינה', 'במיונז', 'כתוש', 'גבישי',
+  'בורקס', 'תפוציפס', 'חטיף', 'ממרח', 'פיקנטי', 'בטחינה', 'במיונז', 'כתוש', 'גבישי', 'רסק', 'זרעי',
   // Frozen — all Hebrew conjugations (masculine/feminine, singular/plural, pa'al/huf'al)
   'קפוא', 'קפואה', 'קפואים', 'קפואות',
   'מוקפא', 'מוקפאת', 'מוקפאים', 'מוקפאות',
@@ -883,7 +884,7 @@ export const PRODUCE_SUBTYPE_TOKENS: readonly string[] = [
   // Specific colors that indicate a non-default variety
   'סגול', 'צהוב',
   // Packaging / processing state
-  'חריף', 'יבש', 'ארוז',
+  'חריף', 'יבש',
 ];
 
 export interface ProduceMatchResult {

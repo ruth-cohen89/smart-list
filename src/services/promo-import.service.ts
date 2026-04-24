@@ -10,9 +10,11 @@ import type {
 import { parseRamiLevyPromotionFile } from '../infrastructure/catalog-import/rami-levy.promo.parser';
 import { parseShufersalPromotionFile } from '../infrastructure/catalog-import/shufersal.promo.parser';
 import { parseMahsaneiHashukPromotionFile } from '../infrastructure/catalog-import/mahsanei-hashuk.promo.parser';
+import { parseTivTaamPromotionFile } from '../infrastructure/catalog-import/tiv-taam.promo.parser';
 import { ramiLevyPromoProvider } from '../infrastructure/catalog-import/providers/rami-levy-promo.provider';
 import { machsaneiHashukPromoProvider } from '../infrastructure/catalog-import/providers/machsanei-hashuk.provider';
 import { shufersalPromoProvider } from '../infrastructure/catalog-import/providers/shufersal-promo.provider';
+import { tivTaamPromoProvider } from '../infrastructure/catalog-import/providers/tiv-taam-promo.provider';
 import {
   classifyPromotion,
   hasUsablePromotionWindow,
@@ -39,6 +41,7 @@ const PROMO_PROVIDERS: Record<ChainId, PromoProvider> = {
   'rami-levy': ramiLevyPromoProvider,
   'machsanei-hashuk': machsaneiHashukPromoProvider,
   shufersal: shufersalPromoProvider,
+  'tiv-taam': tivTaamPromoProvider,
 };
 
 function parsePromotionFile(
@@ -53,6 +56,8 @@ function parsePromotionFile(
       return parseShufersalPromotionFile(xmlData, filename);
     case 'machsanei-hashuk':
       return parseMahsaneiHashukPromotionFile(xmlData, filename);
+    case 'tiv-taam':
+      return parseTivTaamPromotionFile(xmlData, filename);
   }
 }
 

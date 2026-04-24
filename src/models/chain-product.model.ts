@@ -1,9 +1,9 @@
 import { PromotionKind } from './promotion.model';
 import type { ProductType } from './product.model';
 
-export type ChainId = 'shufersal' | 'rami-levy' | 'machsanei-hashuk';
+export type ChainId = 'shufersal' | 'rami-levy' | 'machsanei-hashuk' | 'tiv-taam';
 
-export const SUPPORTED_CHAINS: ChainId[] = ['shufersal', 'rami-levy', 'machsanei-hashuk'];
+export const SUPPORTED_CHAINS: ChainId[] = ['shufersal', 'rami-levy', 'machsanei-hashuk', 'tiv-taam'];
 
 /** Lightweight promotion snapshot stored on ChainProduct.promotions.
  *  Full promotion details live in the Promotion collection. */
