@@ -280,7 +280,7 @@ export interface ConfirmMatchesResponse {
 
 // ─── Price Comparison ───────────────────────────────────────────────────────
 
-export type ChainId = 'shufersal' | 'rami-levy' | 'machsanei-hashuk';
+export type ChainId = 'shufersal' | 'rami-levy' | 'machsanei-hashuk' | 'tiv-taam';
 
 export type PricingAccuracy = 'accurate' | 'approximate';
 

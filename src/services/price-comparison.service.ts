@@ -9,7 +9,7 @@ import {
   PRODUCE_SUBTYPE_TOKENS,
   type ProduceMatchResult,
 } from '../data/produce-catalog';
-import { ProductRepository } from '../repositories/product.repository';
+import { PRODUCE_CHAIN_EXACT_MAP } from '../data/produce-exact-map';
 import type { ShoppingItem } from '../models/shopping-list.model';
 import type { ChainProduct, ChainId, ProductPromotionSnapshot } from '../models/chain-product.model';
 import { SUPPORTED_CHAINS } from '../models/chain-product.model';
@@ -63,7 +63,6 @@ export class PriceComparisonService {
   constructor(
     private readonly shoppingListRepo: ShoppingListRepository,
     private readonly chainProductRepo: ChainProductRepository,
-    private readonly productRepo: ProductRepository,
   ) {}
 
   async compareActiveList(userId: string): Promise<ComparisonResult> {
@@ -316,116 +315,38 @@ export class PriceComparisonService {
     chainId: ChainId,
     produceMatch: ProduceMatchResult,
   ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
-    const normalizedInput = normalizeName(item.name);
+    const { canonicalKey } = produceMatch.entry;
+    const exactAllowed = PRODUCE_CHAIN_EXACT_MAP[canonicalKey]?.[chainId];
 
-    const product = await this.productRepo.findOrCreateByCanonicalKey({
-      canonicalKey: produceMatch.entry.canonicalKey,
-      canonicalName: produceMatch.entry.canonicalName,
-      normalizedName: produceMatch.entry.normalizedName,
-      category: produceMatch.entry.category,
-      unitType: produceMatch.entry.unitType,
-      isWeighted: produceMatch.entry.isWeighted,
-    });
-
-    const entryExcludeTokens = [
-      ...(produceMatch.entry.excludeTokens ?? []),
-      ...(produceMatch.entry.matchExcludeTokens ?? []),
-    ];
-    const normalizedAliases = produceMatch.entry.normalizedAliases;
-
-    // Source 1: productId-linked candidates.
-    // Alias anchor: name must start with a produce alias — guards against false ingestion
-    // links (e.g. "כותש שום") where the alias matched mid-name during import.
-    let linked = (await this.chainProductRepo.findByProductId(product.id, chainId)).filter((p) => {
-      const name = p.normalizedName ?? '';
-      return normalizedAliases.some((alias) => name === alias || name.startsWith(alias + ' '));
-    });
-
-    // Source 2: alias-scoped query — whole-word match anywhere in normalizedName.
-    // Does NOT filter by productType to avoid relying on consistent DB tagging.
-    // classifyProduceCandidate + scoring below are the gates against packaged items.
-    if (linked.length === 0) {
-      linked = await this.chainProductRepo.findByProduceAliases(chainId, normalizedAliases);
-      if (linked.length > 0) {
-        console.log(
-          `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} status=using_alias_candidates linked=${linked.length}`,
-        );
-      }
-    }
-
-    if (linked.length === 0) {
+    if (!exactAllowed) {
       console.log(
-        `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} status=no_chain_product`,
+        `[COMPARE][MATCH][EXACT] chain=${chainId} item="${item.name}" produceKey=${canonicalKey} status=no_map_entry`,
       );
       return null;
     }
 
-    // Strict pre-scoring filter: reject Latin (branded), frozen, processed, per-entry excludes.
-    const base: typeof linked = [];
-    const subtype: typeof linked = [];
-    for (const p of linked) {
-      const cls = this.classifyProduceCandidate(p.normalizedName ?? '', entryExcludeTokens);
-      if (cls === 'base') base.push(p);
-      else if (cls === 'subtype') subtype.push(p);
-      // 'excluded' → silently dropped
-    }
+    const candidates = await this.chainProductRepo.findByNormalizedNames(chainId, [...exactAllowed]);
+    const match = candidates.find((p) => exactAllowed.has(normalizeName(p.normalizedName ?? '')));
 
-    const inputContainsSubtype = PRODUCE_SUBTYPE_TOKENS.some((t) => normalizedInput.includes(t));
-    let candidates: typeof linked;
-    if (base.length > 0) {
-      candidates = base;
-    } else if (inputContainsSubtype && subtype.length > 0) {
-      candidates = subtype;
-    } else {
+    if (match) {
       console.log(
-        `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} ` +
-          `base=0 subtype=${subtype.length} inputSubtype=${inputContainsSubtype} status=no_clean_candidate`,
+        `[COMPARE][MATCH][EXACT] chain=${chainId} item="${item.name}" produceKey=${canonicalKey} product="${match.originalName}" status=matched`,
       );
-      return null;
+      return {
+        shoppingItemId: item.id,
+        shoppingItemName: item.name,
+        itemQuantity: item.quantity,
+        product: match,
+        matchSource: 'produce',
+        score: 1,
+        isAmbiguous: false,
+      };
     }
 
-    // Token-overlap scoring — pure recall (intersection / inputTokens.size).
-    // No char-bigram fallback. Require ≥0.7 to reject weak partial matches.
-    const inputTokens = tokenSet(normalizedInput);
-    const scored = candidates
-      .map((p) => {
-        const candidateTokens = tokenSet(p.normalizedName ?? '');
-        const intersection = [...inputTokens].filter((t) => candidateTokens.has(t)).length;
-        const score = inputTokens.size > 0 ? intersection / inputTokens.size : 0;
-        return { p, score };
-      })
-      .filter((c) => c.score >= 0.7)
-      .sort((a, b) => {
-        const aW = a.p.isWeighted ? 0 : 1;
-        const bW = b.p.isWeighted ? 0 : 1;
-        if (aW !== bW) return aW - bW;
-        const aT = (a.p.normalizedName ?? '').split(' ').filter(Boolean).length;
-        const bT = (b.p.normalizedName ?? '').split(' ').filter(Boolean).length;
-        if (aT !== bT) return aT - bT;
-        return a.p.price - b.p.price;
-      });
-
-    if (scored.length === 0) {
-      console.log(
-        `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} status=no_scored_match`,
-      );
-      return null;
-    }
-
-    const best = scored[0].p;
     console.log(
-      `[COMPARE][MATCH] chain=${chainId} item="${item.name}" source=produce canonicalKey=${produceMatch.entry.canonicalKey} product="${best.originalName}" status=matched`,
+      `[COMPARE][MATCH][EXACT] chain=${chainId} item="${item.name}" produceKey=${canonicalKey} status=no_exact_match`,
     );
-
-    return {
-      shoppingItemId: item.id,
-      shoppingItemName: item.name,
-      itemQuantity: item.quantity,
-      product: best,
-      matchSource: 'produce',
-      score: 1,
-      isAmbiguous: false,
-    };
+    return null;
   }
 
   private async matchByName(
@@ -527,6 +448,7 @@ export class PriceComparisonService {
     };
   }
 }
+
 
 function pickCheapestChain(chains: ChainBasket[]): ChainId | null {
   const withMatches = chains.filter((chain) => chain.isComparable);

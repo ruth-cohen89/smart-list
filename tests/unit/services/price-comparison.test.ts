@@ -1,10 +1,8 @@
 import { PriceComparisonService } from '../../../src/services/price-comparison.service';
 import type { ShoppingListRepository } from '../../../src/repositories/shopping-list.repository';
 import type { ChainProductRepository } from '../../../src/repositories/chain-product.repository';
-import type { ProductRepository } from '../../../src/repositories/product.repository';
 import type { ShoppingItem } from '../../../src/models/shopping-list.model';
 import type { ChainProduct, ChainId } from '../../../src/models/chain-product.model';
-import type { Product } from '../../../src/models/product.model';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,19 +40,6 @@ function fakeShoppingItem(overrides: Partial<ShoppingItem> = {}): ShoppingItem {
   };
 }
 
-function fakeProduct(overrides: Partial<Product> = {}): Product {
-  return {
-    id: 'prod-1',
-    productType: 'produce',
-    barcode: null,
-    canonicalKey: 'tomato',
-    canonicalName: 'עגבניה',
-    normalizedName: 'עגבניה',
-    createdAt: NOW,
-    updatedAt: NOW,
-    ...overrides,
-  };
-}
 
 function buildService(options: {
   shoppingListItems?: ShoppingItem[];
@@ -62,7 +47,8 @@ function buildService(options: {
   chainProductsByBarcode?: ChainProduct[];
   chainProductsByName?: ChainProduct[];
   chainProductsByExternalId?: ChainProduct | null;
-  produceProduct?: Product;
+  chainProductsByProduceAliases?: ChainProduct[];
+  chainProductsByNormalizedNames?: ChainProduct[];
 }) {
   const shoppingListRepo = {
     getOrCreateActiveList: jest.fn().mockResolvedValue({
@@ -82,20 +68,13 @@ function buildService(options: {
     findByBarcode: jest.fn().mockResolvedValue(options.chainProductsByBarcode ?? []),
     findCandidatesByName: jest.fn().mockResolvedValue(options.chainProductsByName ?? []),
     findByExternalId: jest.fn().mockResolvedValue(options.chainProductsByExternalId ?? null),
+    findByProduceAliases: jest.fn().mockResolvedValue(options.chainProductsByProduceAliases ?? []),
+    findByNormalizedNames: jest.fn().mockResolvedValue(options.chainProductsByNormalizedNames ?? []),
   } as unknown as ChainProductRepository;
 
-  const productRepo = {
-    findOrCreateByCanonicalKey: jest
-      .fn()
-      .mockResolvedValue(options.produceProduct ?? fakeProduct()),
-    findOrCreateByBarcode: jest.fn().mockResolvedValue(fakeProduct()),
-    findByBarcode: jest.fn().mockResolvedValue(null),
-    findByCanonicalKey: jest.fn().mockResolvedValue(null),
-  } as unknown as ProductRepository;
+  const service = new PriceComparisonService(shoppingListRepo, chainProductRepo);
 
-  const service = new PriceComparisonService(shoppingListRepo, chainProductRepo, productRepo);
-
-  return { service, shoppingListRepo, chainProductRepo, productRepo };
+  return { service, shoppingListRepo, chainProductRepo };
 }
 
 // ---------------------------------------------------------------------------
@@ -141,46 +120,18 @@ describe('PriceComparisonService — match priority', () => {
   });
 
   describe('priority 3: produce catalog', () => {
-    it('matches produce by canonical key when name is in catalog', async () => {
-      const cp = fakeChainProduct({
-        id: 'cp-tomato',
-        productId: 'prod-tomato',
-        originalName: 'עגבניות',
-        price: 6,
-      });
-      const { service } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'עגבניות', rawName: 'עגבניות' })],
-        chainProductsByProductId: [cp],
-        produceProduct: fakeProduct({ id: 'prod-tomato', canonicalKey: 'tomato' }),
+    it('returns unmatched for produce when canonicalKey has no map entry', async () => {
+      // Map is empty — any produce item has no entry → null immediately, no DB call.
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'עגבניות' })],
       });
 
       const result = await service.compareActiveList('user-1');
-      const matched = result.chains[0].matchedItems;
+      const chain = result.chains[0];
 
-      expect(matched).toHaveLength(1);
-      expect(matched[0].matchSource).toBe('produce');
-    });
-
-    it('falls through to name matching when no chain product for produce', async () => {
-      const cp = fakeChainProduct({
-        id: 'cp-name',
-        originalName: 'עגבניות שדה',
-        normalizedName: 'עגבניות שדה',
-        price: 7,
-      });
-      const { service } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'עגבניות', rawName: 'עגבניות' })],
-        chainProductsByProductId: [], // no chain product linked to produce product
-        chainProductsByName: [cp],
-        produceProduct: fakeProduct({ id: 'prod-tomato', canonicalKey: 'tomato' }),
-      });
-
-      const result = await service.compareActiveList('user-1');
-      const matched = result.chains[0].matchedItems;
-
-      // Should fall through to name matching since produce path found no chain products
-      expect(matched).toHaveLength(1);
-      expect(matched[0].matchSource).toBe('name');
+      expect(chain.matchedItems).toHaveLength(0);
+      expect(chain.unmatchedItems).toHaveLength(1);
+      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
   });
 
@@ -204,6 +155,54 @@ describe('PriceComparisonService — match priority', () => {
 
       expect(matched).toHaveLength(1);
       expect(matched[0].matchSource).toBe('name');
+    });
+  });
+
+  describe('produce exact map — false positive prevention', () => {
+    it('cucumber with no map entry → unmatched, findByNormalizedNames never called', async () => {
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'מלפפון' })],
+        // Even with a matching-looking DB product, no DB call should happen
+        chainProductsByNormalizedNames: [
+          fakeChainProduct({ originalName: 'קרם פנים מלפפון', normalizedName: 'קרם פנים מלפפון' }),
+        ],
+      });
+
+      const result = await service.compareActiveList('user-1');
+
+      expect(result.chains[0].matchedItems).toHaveLength(0);
+      expect(result.chains[0].unmatchedItems).toHaveLength(1);
+      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
+    });
+
+    it('lemon with no map entry → unmatched, findByNormalizedNames never called', async () => {
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'לימון' })],
+        chainProductsByNormalizedNames: [
+          fakeChainProduct({ originalName: 'סוכריות לימון', normalizedName: 'סוכריות לימון' }),
+        ],
+      });
+
+      const result = await service.compareActiveList('user-1');
+
+      expect(result.chains[0].matchedItems).toHaveLength(0);
+      expect(result.chains[0].unmatchedItems).toHaveLength(1);
+      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
+    });
+
+    it('tomato with no map entry → unmatched, findByNormalizedNames never called', async () => {
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'עגבניות' })],
+        chainProductsByNormalizedNames: [
+          fakeChainProduct({ originalName: 'רסק עגבניות', normalizedName: 'רסק עגבניות' }),
+        ],
+      });
+
+      const result = await service.compareActiveList('user-1');
+
+      expect(result.chains[0].matchedItems).toHaveLength(0);
+      expect(result.chains[0].unmatchedItems).toHaveLength(1);
+      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
   });
 
@@ -274,14 +273,7 @@ describe('PriceComparisonService — match priority', () => {
         }),
       } as unknown as ShoppingListRepository;
 
-      const productRepo = {
-        findOrCreateByCanonicalKey: jest.fn().mockResolvedValue(fakeProduct()),
-        findOrCreateByBarcode: jest.fn().mockResolvedValue(fakeProduct()),
-        findByBarcode: jest.fn().mockResolvedValue(null),
-        findByCanonicalKey: jest.fn().mockResolvedValue(null),
-      } as unknown as ProductRepository;
-
-      const service = new PriceComparisonService(shoppingListRepo, chainProductRepo, productRepo);
+      const service = new PriceComparisonService(shoppingListRepo, chainProductRepo);
       const result = await service.compareActiveList('user-1');
 
       // Shufersal: matched by barcode
@@ -359,14 +351,7 @@ describe('PriceComparisonService — match priority', () => {
         }),
       } as unknown as ShoppingListRepository;
 
-      const productRepo = {
-        findOrCreateByCanonicalKey: jest.fn().mockResolvedValue(fakeProduct()),
-        findOrCreateByBarcode: jest.fn().mockResolvedValue(fakeProduct()),
-        findByBarcode: jest.fn().mockResolvedValue(null),
-        findByCanonicalKey: jest.fn().mockResolvedValue(null),
-      } as unknown as ProductRepository;
-
-      const service = new PriceComparisonService(shoppingListRepo, chainProductRepo, productRepo);
+      const service = new PriceComparisonService(shoppingListRepo, chainProductRepo);
       const result = await service.compareActiveList('user-1');
 
       for (const chain of result.chains) {
@@ -376,6 +361,51 @@ describe('PriceComparisonService — match priority', () => {
         // totalPrice should only include matched item (price=15), not the 99-priced name match
         expect(chain.totalPrice).toBe(15);
       }
+    });
+  });
+
+  describe('produce matching — exact map only', () => {
+    // All produce items go through PRODUCE_CHAIN_EXACT_MAP.
+    // With an empty map every produce item returns null — no DB call, no fuzzy fallback.
+
+    it('produce item with no map entry is always unmatched (קישוא)', async () => {
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'קישוא' })],
+      });
+      const chain = (await service.compareActiveList('user-1')).chains[0];
+      expect(chain.matchedItems).toHaveLength(0);
+      expect(chain.unmatchedItems).toHaveLength(1);
+      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
+    });
+
+    it('produce item with no map entry is always unmatched (עגבניות)', async () => {
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'עגבניות' })],
+      });
+      const chain = (await service.compareActiveList('user-1')).chains[0];
+      expect(chain.matchedItems).toHaveLength(0);
+      expect(chain.unmatchedItems).toHaveLength(1);
+      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
+    });
+
+    it('produce item with no map entry is always unmatched (תפוחי אדמה)', async () => {
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'תפוחי אדמה' })],
+      });
+      const chain = (await service.compareActiveList('user-1')).chains[0];
+      expect(chain.matchedItems).toHaveLength(0);
+      expect(chain.unmatchedItems).toHaveLength(1);
+      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
+    });
+
+    it('produce item with no map entry is always unmatched (גזר)', async () => {
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'גזר' })],
+      });
+      const chain = (await service.compareActiveList('user-1')).chains[0];
+      expect(chain.matchedItems).toHaveLength(0);
+      expect(chain.unmatchedItems).toHaveLength(1);
+      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
   });
 

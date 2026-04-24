@@ -3,13 +3,11 @@ import { PriceComparisonController } from '../controllers/price-comparison.contr
 import { PriceComparisonService } from '../services/price-comparison.service';
 import { ShoppingListRepository } from '../repositories/shopping-list.repository';
 import { ChainProductRepository } from '../repositories/chain-product.repository';
-import { ProductRepository } from '../repositories/product.repository';
 import { authenticate } from '../middlewares/authenticate';
 
 const shoppingListRepo = new ShoppingListRepository();
 const chainProductRepo = new ChainProductRepository();
-const productRepo = new ProductRepository();
-const service = new PriceComparisonService(shoppingListRepo, chainProductRepo, productRepo);
+const service = new PriceComparisonService(shoppingListRepo, chainProductRepo);
 const controller = new PriceComparisonController(service);
 
 const router = Router();

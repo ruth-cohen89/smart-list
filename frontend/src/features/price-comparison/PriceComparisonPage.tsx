@@ -15,9 +15,10 @@ const CHAIN_LABELS: Record<ChainId, string> = {
   shufersal: 'Shufersal',
   'rami-levy': 'Rami Levy',
   'machsanei-hashuk': 'Machsanei Hashuk',
+  'tiv-taam': 'Tiv Taam',
 };
 
-const STORE_LOGOS: Record<ChainId, string> = {
+const STORE_LOGOS: Partial<Record<ChainId, string>> = {
   'rami-levy': ramiLevyLogo,
   shufersal: shufersalLogo,
   'machsanei-hashuk': machsaneiHashukLogo,
@@ -27,6 +28,7 @@ const CHAIN_ACCENT: Record<ChainId, string> = {
   shufersal: 'bg-red-500',
   'rami-levy': 'bg-blue-500',
   'machsanei-hashuk': 'bg-amber-500',
+  'tiv-taam': 'bg-green-600',
 };
 
 // ─── Logo with fallback ────────────────────────────────────────────────────
@@ -98,11 +100,17 @@ export default function PriceComparisonPage() {
     load();
   }, []);
 
-  const sortedChains = result ? [...result.chains].sort((a, b) => a.totalPrice - b.totalPrice) : [];
+  const sortedChains = result
+    ? [...result.chains].sort((a, b) => {
+        if (a.isComparable !== b.isComparable) return a.isComparable ? -1 : 1;
+        return a.totalPrice - b.totalPrice;
+      })
+    : [];
 
-  const cheapestPrice = sortedChains.length > 0 ? sortedChains[0].totalPrice : 0;
+  const comparableChains = sortedChains.filter((c) => c.isComparable);
+  const cheapestPrice = comparableChains.length > 0 ? comparableChains[0].totalPrice : 0;
   const mostExpensivePrice =
-    sortedChains.length > 0 ? sortedChains[sortedChains.length - 1].totalPrice : 0;
+    comparableChains.length > 0 ? comparableChains[comparableChains.length - 1].totalPrice : 0;
   const savingsVsExpensive = mostExpensivePrice - cheapestPrice;
 
   return (
@@ -189,14 +197,14 @@ export default function PriceComparisonPage() {
                       {cheapestPrice.toFixed(2)} &#8362;
                     </p>
                   </div>
-                  {savingsVsExpensive > 0.01 && (
+                  {savingsVsExpensive > 0.01 && comparableChains.length > 1 && (
                     <div className="text-right flex-shrink-0">
                       <p className="text-xs text-gray-400">You save</p>
                       <p className="text-base font-bold text-green-600 tabular-nums">
                         {savingsVsExpensive.toFixed(2)} &#8362;
                       </p>
                       <p className="text-xs text-gray-400">
-                        vs {CHAIN_LABELS[sortedChains[sortedChains.length - 1].chainId]}
+                        vs {CHAIN_LABELS[comparableChains[comparableChains.length - 1].chainId]}
                       </p>
                     </div>
                   )}
@@ -206,18 +214,18 @@ export default function PriceComparisonPage() {
 
             {/* ── Store cards ── */}
             <div className="space-y-3">
-              {sortedChains.map((chain, idx) => (
+              {sortedChains.map((chain) => (
                 <ChainCard
                   key={chain.chainId}
                   chain={chain}
-                  isCheapest={idx === 0 && result.cheapestChainId !== null}
+                  isCheapest={chain.chainId === result.cheapestChainId}
                   savingsVsCheapest={chain.totalPrice - cheapestPrice}
                 />
               ))}
             </div>
 
             {/* No matches at all */}
-            {sortedChains.every((c) => c.matchedItems.length === 0) && (
+            {sortedChains.every((c) => (c.matchedItems ?? []).length === 0) && (
               <div className="text-center py-12">
                 <p className="text-gray-500">
                   No products could be matched to any store. Try adding items with barcodes.
@@ -270,23 +278,31 @@ function ChainCard({
             )}
           </div>
           <p className="text-xs text-gray-400 mt-0.5">
-            {chain.matchedItems.length} matched
-            {chain.unmatchedItems.length > 0 && (
-              <span className="text-amber-500 ml-2">{chain.unmatchedItems.length} not found</span>
+            {(chain.matchedItems ?? []).length} matched
+            {(chain.unmatchedItems ?? []).length > 0 && (
+              <span className="text-amber-500 ml-2">
+                {(chain.unmatchedItems ?? []).length} not found
+              </span>
             )}
           </p>
         </div>
 
         {/* Price + delta */}
         <div className="text-right flex-shrink-0">
-          <p className="text-xl font-bold text-gray-900 tabular-nums">
-            {chain.totalPrice.toFixed(2)}{' '}
-            <span className="text-sm font-medium text-gray-400">&#8362;</span>
-          </p>
-          {!isCheapest && savingsVsCheapest > 0.01 && (
-            <p className="text-xs font-medium text-red-400 tabular-nums mt-0.5">
-              +{savingsVsCheapest.toFixed(2)} &#8362;
-            </p>
+          {chain.isComparable ? (
+            <>
+              <p className="text-xl font-bold text-gray-900 tabular-nums">
+                {chain.totalPrice.toFixed(2)}{' '}
+                <span className="text-sm font-medium text-gray-400">&#8362;</span>
+              </p>
+              {!isCheapest && savingsVsCheapest > 0.01 && (
+                <p className="text-xs font-medium text-red-400 tabular-nums mt-0.5">
+                  +{savingsVsCheapest.toFixed(2)} &#8362;
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-sm font-medium text-gray-400">Not comparable</p>
           )}
         </div>
 
@@ -314,58 +330,66 @@ function ChainCard({
         }}
       >
         <div className="border-t border-gray-100/80">
-          {/* Matched items */}
-          {chain.matchedItems.length > 0 && (
-            <div className="divide-y divide-gray-50">
-              {chain.matchedItems.map((item) => {
-                const hasSavings = item.regularTotalPrice > item.effectiveTotalPrice + 0.01;
-                return (
-                  <div key={item.shoppingItemId} className="px-5 py-3 flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">
-                        {item.shoppingItemName}
-                      </p>
-                      <p className="text-xs text-gray-400 truncate">
-                        {item.product.originalName}
-                        {item.itemQuantity > 1 ? ` x${item.itemQuantity}` : ''}
-                      </p>
-                      {item.appliedPromotion && (
-                        <p className="text-xs text-green-600 truncate mt-0.5">
-                          {item.appliedPromotion.description}
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-semibold text-gray-900 tabular-nums">
-                        {item.effectiveTotalPrice.toFixed(2)} &#8362;
-                      </p>
-                      {hasSavings && (
-                        <p className="text-xs text-gray-400 line-through tabular-nums">
-                          {item.regularTotalPrice.toFixed(2)} &#8362;
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {!chain.isComparable ? (
+            <p className="px-5 py-4 text-sm text-gray-400">
+              No products could be compared for this store.
+            </p>
+          ) : (
+            <>
+              {/* Matched items */}
+              {(chain.matchedItems ?? []).length > 0 && (
+                <div className="divide-y divide-gray-50">
+                  {(chain.matchedItems ?? []).map((item) => {
+                    const hasSavings = item.regularTotalPrice > item.effectiveTotalPrice + 0.01;
+                    return (
+                      <div key={item.shoppingItemId} className="px-5 py-3 flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">
+                            {item.shoppingItemName}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate">
+                            {item.product.originalName}
+                            {item.itemQuantity > 1 ? ` x${item.itemQuantity}` : ''}
+                          </p>
+                          {item.appliedPromotion && (
+                            <p className="text-xs text-green-600 truncate mt-0.5">
+                              {item.appliedPromotion.description}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-sm font-semibold text-gray-900 tabular-nums">
+                            {item.effectiveTotalPrice.toFixed(2)} &#8362;
+                          </p>
+                          {hasSavings && (
+                            <p className="text-xs text-gray-400 line-through tabular-nums">
+                              {item.regularTotalPrice.toFixed(2)} &#8362;
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
-          {/* Unmatched items */}
-          {chain.unmatchedItems.length > 0 && (
-            <div className="bg-gray-50/60 px-5 py-3">
-              <p className="text-xs font-medium text-gray-400 mb-1.5">Not found in this store</p>
-              <div className="flex flex-wrap gap-1.5">
-                {chain.unmatchedItems.map((item) => (
-                  <span
-                    key={item.shoppingItemId}
-                    className="text-xs bg-white px-2 py-0.5 rounded-md text-gray-500 border border-gray-150"
-                  >
-                    {item.shoppingItemName}
-                  </span>
-                ))}
-              </div>
-            </div>
+              {/* Unmatched items */}
+              {(chain.unmatchedItems ?? []).length > 0 && (
+                <div className="bg-gray-50/60 px-5 py-3">
+                  <p className="text-xs font-medium text-gray-400 mb-1.5">Not found in this store</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(chain.unmatchedItems ?? []).map((item) => (
+                      <span
+                        key={item.shoppingItemId}
+                        className="text-xs bg-white px-2 py-0.5 rounded-md text-gray-500 border border-gray-150"
+                      >
+                        {item.shoppingItemName}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

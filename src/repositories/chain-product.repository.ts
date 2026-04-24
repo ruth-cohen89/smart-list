@@ -144,6 +144,16 @@ export class ChainProductRepository {
     return doc ? mapChainProduct(doc) : null;
   }
 
+  async findByNormalizedNames(chainId: ChainId, normalizedNames: string[]): Promise<ChainProduct[]> {
+    if (normalizedNames.length === 0) return [];
+    const docs = await ChainProductMongoose.find({
+      chainId,
+      isActive: true,
+      normalizedName: { $in: normalizedNames },
+    }).lean();
+    return docs.map(mapChainProduct);
+  }
+
   async mergePromotions(
     chainId: ChainId,
     promotionsByItemCode: Map<string, ProductPromotionSnapshot[]>,

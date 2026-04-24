@@ -28,12 +28,14 @@ const CHAIN_LABELS: Record<string, string> = {
   shufersal: 'Shufersal',
   'rami-levy': 'Rami Levy',
   'machsanei-hashuk': 'Machsanei Hashuk',
+  'tiv-taam': 'Tiv Taam',
 };
 
 const CHAIN_COLORS: Record<string, string> = {
   shufersal: 'bg-red-100 text-red-700',
   'rami-levy': 'bg-blue-100 text-blue-700',
   'machsanei-hashuk': 'bg-amber-100 text-amber-700',
+  'tiv-taam': 'bg-green-100 text-green-700',
 };
 
 interface SelectedProduct {
