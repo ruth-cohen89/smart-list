@@ -120,10 +120,11 @@ describe('PriceComparisonService — match priority', () => {
   });
 
   describe('priority 3: produce catalog', () => {
-    it('returns unmatched for produce when canonicalKey has no map entry', async () => {
-      // Map is empty — any produce item has no entry → null immediately, no DB call.
+    it('returns unmatched for produce when canonicalKey is not in exact map', async () => {
+      // 'תפוז' (orange) is in the produce catalog but not in PRODUCE_CHAIN_EXACT_MAP
+      // → matchByProduce returns null immediately, no DB call.
       const { service, chainProductRepo } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'עגבניות' })],
+        shoppingListItems: [fakeShoppingItem({ name: 'תפוז' })],
       });
 
       const result = await service.compareActiveList('user-1');
@@ -132,6 +133,26 @@ describe('PriceComparisonService — match priority', () => {
       expect(chain.matchedItems).toHaveLength(0);
       expect(chain.unmatchedItems).toHaveLength(1);
       expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
+    });
+
+    it('returns matched when canonicalKey is in exact map and DB name matches', async () => {
+      const cp = fakeChainProduct({
+        id: 'cp-tomato',
+        originalName: 'עגבניה',
+        normalizedName: 'עגבניה',
+        price: 6,
+      });
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'עגבניות' })],
+        chainProductsByNormalizedNames: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const matched = result.chains[0].matchedItems;
+
+      expect(matched).toHaveLength(1);
+      expect(matched[0].matchSource).toBe('produce');
+      expect(matched[0].product.id).toBe('cp-tomato');
     });
   });
 
@@ -159,10 +180,13 @@ describe('PriceComparisonService — match priority', () => {
   });
 
   describe('produce exact map — false positive prevention', () => {
-    it('cucumber with no map entry → unmatched, findByNormalizedNames never called', async () => {
-      const { service, chainProductRepo } = buildService({
+    // DB returns a product whose normalizedName contains the produce word but is NOT
+    // in the whitelist (wrong category: cosmetic / candy / processed).
+    // The whitelist filter must reject it → unmatched.
+
+    it('cucumber: DB returns face-cream product → unmatched (not in whitelist)', async () => {
+      const { service } = buildService({
         shoppingListItems: [fakeShoppingItem({ name: 'מלפפון' })],
-        // Even with a matching-looking DB product, no DB call should happen
         chainProductsByNormalizedNames: [
           fakeChainProduct({ originalName: 'קרם פנים מלפפון', normalizedName: 'קרם פנים מלפפון' }),
         ],
@@ -172,11 +196,10 @@ describe('PriceComparisonService — match priority', () => {
 
       expect(result.chains[0].matchedItems).toHaveLength(0);
       expect(result.chains[0].unmatchedItems).toHaveLength(1);
-      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
 
-    it('lemon with no map entry → unmatched, findByNormalizedNames never called', async () => {
-      const { service, chainProductRepo } = buildService({
+    it('lemon: DB returns candy product → unmatched (not in whitelist)', async () => {
+      const { service } = buildService({
         shoppingListItems: [fakeShoppingItem({ name: 'לימון' })],
         chainProductsByNormalizedNames: [
           fakeChainProduct({ originalName: 'סוכריות לימון', normalizedName: 'סוכריות לימון' }),
@@ -187,11 +210,10 @@ describe('PriceComparisonService — match priority', () => {
 
       expect(result.chains[0].matchedItems).toHaveLength(0);
       expect(result.chains[0].unmatchedItems).toHaveLength(1);
-      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
 
-    it('tomato with no map entry → unmatched, findByNormalizedNames never called', async () => {
-      const { service, chainProductRepo } = buildService({
+    it('tomato: DB returns tomato paste product → unmatched (not in whitelist)', async () => {
+      const { service } = buildService({
         shoppingListItems: [fakeShoppingItem({ name: 'עגבניות' })],
         chainProductsByNormalizedNames: [
           fakeChainProduct({ originalName: 'רסק עגבניות', normalizedName: 'רסק עגבניות' }),
@@ -202,7 +224,6 @@ describe('PriceComparisonService — match priority', () => {
 
       expect(result.chains[0].matchedItems).toHaveLength(0);
       expect(result.chains[0].unmatchedItems).toHaveLength(1);
-      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
   });
 
@@ -365,12 +386,12 @@ describe('PriceComparisonService — match priority', () => {
   });
 
   describe('produce matching — exact map only', () => {
-    // All produce items go through PRODUCE_CHAIN_EXACT_MAP.
-    // With an empty map every produce item returns null — no DB call, no fuzzy fallback.
+    // תפוז / בננה / תפוח are in the produce catalog but NOT in PRODUCE_CHAIN_EXACT_MAP.
+    // matchByProduce must return null immediately — no DB call, no fuzzy fallback.
 
-    it('produce item with no map entry is always unmatched (קישוא)', async () => {
+    it('produce item with no map entry is always unmatched (תפוז)', async () => {
       const { service, chainProductRepo } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'קישוא' })],
+        shoppingListItems: [fakeShoppingItem({ name: 'תפוז' })],
       });
       const chain = (await service.compareActiveList('user-1')).chains[0];
       expect(chain.matchedItems).toHaveLength(0);
@@ -378,9 +399,9 @@ describe('PriceComparisonService — match priority', () => {
       expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
 
-    it('produce item with no map entry is always unmatched (עגבניות)', async () => {
+    it('produce item with no map entry is always unmatched (בננה)', async () => {
       const { service, chainProductRepo } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'עגבניות' })],
+        shoppingListItems: [fakeShoppingItem({ name: 'בננה' })],
       });
       const chain = (await service.compareActiveList('user-1')).chains[0];
       expect(chain.matchedItems).toHaveLength(0);
@@ -388,9 +409,9 @@ describe('PriceComparisonService — match priority', () => {
       expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
 
-    it('produce item with no map entry is always unmatched (תפוחי אדמה)', async () => {
+    it('produce item with no map entry is always unmatched (תפוח)', async () => {
       const { service, chainProductRepo } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'תפוחי אדמה' })],
+        shoppingListItems: [fakeShoppingItem({ name: 'תפוח' })],
       });
       const chain = (await service.compareActiveList('user-1')).chains[0];
       expect(chain.matchedItems).toHaveLength(0);
@@ -398,14 +419,14 @@ describe('PriceComparisonService — match priority', () => {
       expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
 
-    it('produce item with no map entry is always unmatched (גזר)', async () => {
-      const { service, chainProductRepo } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'גזר' })],
+    it('produce item in map but DB returns no match → unmatched (לימון, empty DB)', async () => {
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'לימון' })],
+        // chainProductsByNormalizedNames defaults to [] → no match in DB
       });
       const chain = (await service.compareActiveList('user-1')).chains[0];
       expect(chain.matchedItems).toHaveLength(0);
       expect(chain.unmatchedItems).toHaveLength(1);
-      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
   });
 
