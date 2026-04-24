@@ -70,6 +70,7 @@ function buildService(options: {
     findByExternalId: jest.fn().mockResolvedValue(options.chainProductsByExternalId ?? null),
     findByProduceAliases: jest.fn().mockResolvedValue(options.chainProductsByProduceAliases ?? []),
     findByNormalizedNames: jest.fn().mockResolvedValue(options.chainProductsByNormalizedNames ?? []),
+    debugFindByTokens: jest.fn().mockResolvedValue([]),
   } as unknown as ChainProductRepository;
 
   const service = new PriceComparisonService(shoppingListRepo, chainProductRepo);
@@ -136,14 +137,15 @@ describe('PriceComparisonService — match priority', () => {
     });
 
     it('returns matched when canonicalKey is in exact map and DB name matches', async () => {
+      // shufersal onion → allowed: ['בצל יבש']
       const cp = fakeChainProduct({
-        id: 'cp-tomato',
-        originalName: 'עגבניה',
-        normalizedName: 'עגבניה',
-        price: 6,
+        id: 'cp-onion',
+        originalName: 'בצל יבש',
+        normalizedName: 'בצל יבש',
+        price: 7,
       });
       const { service } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'עגבניות' })],
+        shoppingListItems: [fakeShoppingItem({ name: 'בצל' })],
         chainProductsByNormalizedNames: [cp],
       });
 
@@ -152,7 +154,7 @@ describe('PriceComparisonService — match priority', () => {
 
       expect(matched).toHaveLength(1);
       expect(matched[0].matchSource).toBe('produce');
-      expect(matched[0].product.id).toBe('cp-tomato');
+      expect(matched[0].product.id).toBe('cp-onion');
     });
   });
 

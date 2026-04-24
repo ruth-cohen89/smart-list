@@ -9,37 +9,37 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     'rami-levy': ['עגבניה'],
     'tiv-taam': ['עגבניות'],
     'machsanei-hashuk': ['עגבניה'],
-    shufersal: ['עגבניה'],
+    shufersal: [],                                    // no clear fresh candidate
   },
   cucumber: {
     'tiv-taam': ['מלפפונים'],
     'rami-levy': ['מלפפון'],
     'machsanei-hashuk': ['מלפפון'],
-    shufersal: ['מלפפון'],
+    shufersal: [],                                    // no clear fresh candidate
   },
   carrot: {
-    'tiv-taam': ['גזר ארוז'],
+    'tiv-taam': [],                                   // no clear fresh candidate
     'rami-levy': ['גזר ארוז'],
     'machsanei-hashuk': ['גזר ארוז'],
-    shufersal: ['גזר ארוז'],
+    shufersal: [],                                    // no clear fresh candidate
   },
   'sweet-potato': {
     'tiv-taam': ['בטטה'],
     'rami-levy': ['בטטה'],
     'machsanei-hashuk': ['בטטה'],
-    shufersal: ['בטטה'],
+    shufersal: [],                                    // no clear fresh candidate
   },
   potato: {
     'tiv-taam': ['תפו"א לבן ברשת'],
     'rami-levy': ['תפוח אדמה לבן ארוז'],
-    'machsanei-hashuk': ['שק תפוח אדמה לבן'],
+    'machsanei-hashuk': ['תפוח אדמה לבן ארוז'],
     shufersal: ['תפוח אדמה לבן ארוז'],
   },
   'potato-red': {
-    'tiv-taam': ['תפוח אדמה אדום'],
+    'tiv-taam': [],                                   // no clear fresh candidate
     'rami-levy': ['תפוח אדמה אדום ארוז'],
-    'machsanei-hashuk': ['שק תפוח אדמה אדום'],
-    shufersal: ['תפוח אדמה אדום ארוז'],
+    'machsanei-hashuk': ['תפוח אדמה אדום'],
+    shufersal: [],                                    // no clear fresh candidate
   },
   onion: {
     'tiv-taam': ['בצל יבש'],
@@ -51,7 +51,7 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     'tiv-taam': ['בצל אדום'],
     'rami-levy': ['בצל אדום'],
     'machsanei-hashuk': ['בצל אדום'],
-    shufersal: ['בצל יבש אדום'],
+    shufersal: ['בצל יבש אדום ארוז'],
   },
   garlic: {
     'tiv-taam': ['שום ברשת'],
@@ -69,7 +69,7 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     'tiv-taam': [],
     'rami-levy': ['פלפל ירוק כהה'],
     'machsanei-hashuk': ['פלפל כהה'],
-    shufersal: ['פלפל ירוק כהה'],
+    shufersal: [],                                    // no clear fresh candidate
   },
   'pepper-yellow': {
     'tiv-taam': [],
@@ -78,16 +78,16 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     shufersal: ['פלפל צהוב'],
   },
   zucchini: {
-    'tiv-taam': ['קשואים'],
+    'tiv-taam': ['קישואים'],                         // was קשואים — typo fixed
     'rami-levy': ['קישוא ירוק'],
     'machsanei-hashuk': ['קישואים'],
-    shufersal: ['מארז קישוא זוקיני'],
+    shufersal: [],                                    // no clear fresh candidate
   },
   eggplant: {
     'tiv-taam': ['חצילים'],
     'rami-levy': ['חציל'],
     'machsanei-hashuk': ['חציל'],
-    shufersal: ['חציל'],
+    shufersal: [],                                    // no clear fresh candidate
   },
   cabbage: {
     'tiv-taam': ['כרוב לבן'],
@@ -103,45 +103,45 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
   },
   cauliflower: {
     'tiv-taam': ['כרובית'],
-    'rami-levy': [],
-    'machsanei-hashuk': ['כרובית בתפזורת'],
-    shufersal: ['כרובית'],
+    'rami-levy': ['כרובית', 'כרובית ארוזה', "כרובית ארוזה יח' רמי לוי"],
+    'machsanei-hashuk': ['כרובית'],
+    shufersal: ['כרובית ארוזה'],
   },
   broccoli: {
     'tiv-taam': ['ברוקולי'],
-    'rami-levy': [],
-    'machsanei-hashuk': ['ברוקולי מובחר'],
-    shufersal: ['ברוקולי ארוז'],
+    'rami-levy': ['ברוקולי חסלט', 'בייבי ברוקולי חוות תקוע', 'ברוקולי יבולי הכפר מהדרין', 'ברוקולי מיני ארוז א.אדמה'],
+    'machsanei-hashuk': ['ברוקולי ארוז יחידה'],
+    shufersal: ['ברוקולי אורגני מארז'],
   },
   'lettuce-arabic': {
     'tiv-taam': ['חסה ערבית'],
-    'rami-levy': ['חסה'],
+    'rami-levy': ['חסה ערבית שקית חסלט', 'חסה ערבית מהדרין רמי לוי'],
     'machsanei-hashuk': ['חסה ערבית'],
-    shufersal: ['חסה ערבית'],
+    shufersal: ['מארז עלי חסה ערבית 250ג'],
   },
   'lettuce-lalik': {
     'tiv-taam': ['חסה לאליק הידרופונית'],
-    'rami-levy': ['חסה לאליק מהדרין רמי לוי'],
+    'rami-levy': ['חסה לאליק א.אדמה'],
     'machsanei-hashuk': ['חסה לליק'],
-    shufersal: ['מארז חסה לאליק הידרופונית'],
+    shufersal: ['חסה לאליק', 'חסה לאליק הידרופונית'],
   },
   'tomato-cherry': {
     'tiv-taam': ['עגבניות שרי'],
     'rami-levy': ['עגבניות שרי לובלו רמי לוי'],
-    'machsanei-hashuk': ['עגבניות שרי'],
-    shufersal: ['מארז עגבניות שרי - תמר'],
+    'machsanei-hashuk': ['עגבניות שרי ארוז', 'עגבניות שרי קלמרים', 'עגבניות שרי תמר אדום ארוז'],
+    shufersal: ['מארז עגבניות שרי לובלו', 'עגבניות שרי מנומר460ג'],
   },
   'hot-pepper': {
     'tiv-taam': ['פלפל חריף'],
     'rami-levy': ['פלפל חריף'],
-    'machsanei-hashuk': ['פלפל חריף'],
-    shufersal: ['פלפל חריף'],
+    'machsanei-hashuk': ['פלפל חריף ירוק'],
+    shufersal: ["מארז פלפל צ'ילי חריף יח'", 'פלפל חריף ארוז 6יחידות'],
   },
   lemon: {
     'tiv-taam': ['לימון'],
     'rami-levy': ['לימון'],
     'machsanei-hashuk': ['לימון'],
-    shufersal: ['לימון'],
+    shufersal: [],                                    // no clear fresh candidate
   },
 };
 

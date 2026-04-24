@@ -154,6 +154,30 @@ export class ChainProductRepository {
     return docs.map(mapChainProduct);
   }
 
+  // TEMP DEBUG — loose token search to surface real DB names for map validation.
+  // Remove once map values are confirmed correct.
+  async debugFindByTokens(
+    chainId: ChainId,
+    tokens: string[],
+  ): Promise<Array<{ originalName: string; normalizedName: string; price: number }>> {
+    if (tokens.length === 0) return [];
+    const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const pattern = escaped.map((t) => `(?=.*${t})`).join('');
+    const docs = await ChainProductMongoose.find({
+      chainId,
+      isActive: true,
+      normalizedName: { $regex: pattern, $options: 'i' },
+    })
+      .select('originalName normalizedName price')
+      .limit(10)
+      .lean();
+    return docs.map((d) => ({
+      originalName: d.originalName as string,
+      normalizedName: d.normalizedName as string,
+      price: d.price as number,
+    }));
+  }
+
   async mergePromotions(
     chainId: ChainId,
     promotionsByItemCode: Map<string, ProductPromotionSnapshot[]>,

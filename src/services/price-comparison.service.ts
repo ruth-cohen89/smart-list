@@ -325,7 +325,8 @@ export class PriceComparisonService {
       return null;
     }
 
-    const candidates = await this.chainProductRepo.findByNormalizedNames(chainId, [...exactAllowed]);
+    const allowedNormalized = [...exactAllowed];
+    const candidates = await this.chainProductRepo.findByNormalizedNames(chainId, allowedNormalized);
     const match = candidates.find((p) => exactAllowed.has(normalizeName(p.normalizedName ?? '')));
 
     if (match) {
@@ -343,8 +344,19 @@ export class PriceComparisonService {
       };
     }
 
+    // No exact match — run a loose debug search so we can see what's actually in the DB.
+    // TEMP DEBUG: remove once map values are confirmed correct.
+    const debugTokens = produceMatch.entry.normalizedAliases
+      .flatMap((a) => a.split(' ').filter((t) => t.length >= 2))
+      .slice(0, 2);
+    const dbAround = debugTokens.length > 0
+      ? await this.chainProductRepo.debugFindByTokens(chainId, debugTokens)
+      : [];
+
     console.log(
-      `[COMPARE][MATCH][EXACT] chain=${chainId} item="${item.name}" produceKey=${canonicalKey} status=no_exact_match`,
+      `[PRODUCE][DEBUG] chain=${chainId} item="${item.name}" produceKey=${canonicalKey}` +
+        `\n  map_allowed_normalized : ${JSON.stringify(allowedNormalized)}` +
+        `\n  db_candidates_loose    : ${JSON.stringify(dbAround)}`,
     );
     return null;
   }
