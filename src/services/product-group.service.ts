@@ -446,13 +446,12 @@ export class ProductGroupService {
     const sorted = [...rules.includeTokenSets].sort((a, b) => b.length - a.length);
 
     for (const tokenSet of sorted) {
-      // Use plain includes() — NOT substringMatch — because Hebrew prefixes
-      // (ה, ב, ל, כ, מ, ש) attach directly to words without spaces, so
-      // "המלח" contains "מלח" but the word-boundary regex (?:^|\s)מלח fails.
-      // Word-boundary matching is appropriate only for excludes (false-positive
-      // prevention); for includes it incorrectly rejects valid prefixed forms.
+      // Use substringMatch (word-boundary for tokens ≤3 chars) so that short
+      // keywords like "חלה" do not spuriously match inside unrelated words such
+      // as "אחלה". Longer tokens fall through to plain includes(), which handles
+      // Hebrew plural/singular and prefixed forms (e.g. "עגבני" → "עגבניות").
       const matchesAll = tokenSet.every((token) =>
-        candidateTokens.has(token) || candidateText.includes(token),
+        candidateTokens.has(token) || substringMatch(candidateText, token),
       );
       if (matchesAll) return tokenSet;
     }

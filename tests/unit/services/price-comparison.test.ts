@@ -1,4 +1,6 @@
 import { PriceComparisonService } from '../../../src/services/price-comparison.service';
+import { compareBasket } from '../../../src/services/compare-basket';
+import type { IBasketRepo, BasketItem } from '../../../src/services/compare-basket';
 import type { ShoppingListRepository } from '../../../src/repositories/shopping-list.repository';
 import type { ChainProductRepository } from '../../../src/repositories/chain-product.repository';
 import type { ShoppingItem } from '../../../src/models/shopping-list.model';
@@ -697,5 +699,111 @@ describe('PriceComparisonService — match priority', () => {
         expect(chain.unmatchedItems).toHaveLength(0);
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// compareBasket
+// ---------------------------------------------------------------------------
+
+describe('compareBasket', () => {
+  function mockRepo(products: { chain: string; name: string; price: number }[]): IBasketRepo {
+    return { findProducts: jest.fn().mockResolvedValue(products) };
+  }
+
+  it('picks the cheapest chain for a single product across two chains', async () => {
+    const basket: BasketItem[] = [{ name: 'חלב', quantity: 1 }];
+    const repo = mockRepo([
+      { chain: 'shufersal', name: 'חלב', price: 10 },
+      { chain: 'rami-levy', name: 'חלב', price: 7 },
+    ]);
+
+    const result = await compareBasket(basket, repo);
+
+    expect(result.cheapestChain).toBe('rami-levy');
+    expect(result.totals['shufersal']).toBe(10);
+    expect(result.totals['rami-levy']).toBe(7);
+  });
+
+  it('calculates totals and picks cheapest across 3 chains and 4 products', async () => {
+    const basket: BasketItem[] = [
+      { name: 'חלב', quantity: 1 },
+      { name: 'לחם', quantity: 1 },
+      { name: 'בננה', quantity: 1 },
+      { name: 'עגבניה', quantity: 1 },
+    ];
+    const repo = mockRepo([
+      { chain: 'shufersal', name: 'חלב', price: 6 },
+      { chain: 'shufersal', name: 'לחם', price: 8 },
+      { chain: 'shufersal', name: 'בננה', price: 3 },
+      { chain: 'shufersal', name: 'עגבניה', price: 4 },
+      { chain: 'rami-levy', name: 'חלב', price: 5 },
+      { chain: 'rami-levy', name: 'לחם', price: 7 },
+      { chain: 'rami-levy', name: 'בננה', price: 4 },
+      { chain: 'rami-levy', name: 'עגבניה', price: 3 },
+      { chain: 'machsanei-hashuk', name: 'חלב', price: 7 },
+      { chain: 'machsanei-hashuk', name: 'לחם', price: 6 },
+      { chain: 'machsanei-hashuk', name: 'בננה', price: 2 },
+      { chain: 'machsanei-hashuk', name: 'עגבניה', price: 5 },
+    ]);
+
+    const result = await compareBasket(basket, repo);
+
+    expect(result.totals['shufersal']).toBe(21);
+    expect(result.totals['rami-levy']).toBe(19);
+    expect(result.totals['machsanei-hashuk']).toBe(20);
+    expect(result.cheapestChain).toBe('rami-levy');
+  });
+
+  it('multiplies price by quantity', async () => {
+    const basket: BasketItem[] = [{ name: 'חלב', quantity: 3 }];
+    const repo = mockRepo([{ chain: 'shufersal', name: 'חלב', price: 5 }]);
+
+    const result = await compareBasket(basket, repo);
+
+    expect(result.totals['shufersal']).toBe(15);
+  });
+
+  it('reports items absent from all chain results as unmatchedItems', async () => {
+    const basket: BasketItem[] = [
+      { name: 'חלב', quantity: 1 },
+      { name: 'מוצר נדיר', quantity: 1 },
+    ];
+    const repo = mockRepo([{ chain: 'shufersal', name: 'חלב', price: 5 }]);
+
+    const result = await compareBasket(basket, repo);
+
+    expect(result.unmatchedItems).toContain('מוצר נדיר');
+  });
+
+  it('excludes a chain missing an item from cheapest selection even if its partial total is lower', async () => {
+    const basket: BasketItem[] = [
+      { name: 'חלב', quantity: 1 },
+      { name: 'לחם', quantity: 1 },
+    ];
+    const repo = mockRepo([
+      { chain: 'shufersal', name: 'חלב', price: 5 },
+      { chain: 'shufersal', name: 'לחם', price: 4 },
+      { chain: 'rami-levy', name: 'חלב', price: 3 }, // missing לחם
+    ]);
+
+    const result = await compareBasket(basket, repo);
+
+    expect(result.cheapestChain).toBe('shufersal');
+  });
+
+  it('returns null cheapestChain when no chain has all basket items', async () => {
+    const basket: BasketItem[] = [
+      { name: 'חלב', quantity: 1 },
+      { name: 'לחם', quantity: 1 },
+    ];
+    const repo = mockRepo([
+      { chain: 'shufersal', name: 'חלב', price: 5 }, // missing לחם
+      { chain: 'rami-levy', name: 'לחם', price: 4 }, // missing חלב
+    ]);
+
+    const result = await compareBasket(basket, repo);
+
+    expect(result.cheapestChain).toBeNull();
   });
 });

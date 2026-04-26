@@ -104,7 +104,7 @@ describe('computeBestEffectivePrice', () => {
   };
 
   test('falls back to the regular price with no promotions', () => {
-    const result = computeBestEffectivePrice(baseProduct, 3, now);
+    const result = computeBestEffectivePrice(baseProduct, 3, undefined, now);
     expect(result.effectiveTotalPrice).toBe(21);
     expect(result.appliedPromotion).toBeNull();
   });
@@ -113,6 +113,7 @@ describe('computeBestEffectivePrice', () => {
     const result = computeBestEffectivePrice(
       { price: 7, promotions: [makePromotion({ discountedPrice: 10, minQty: 2 })] },
       2,
+      undefined,
       now,
     );
 
@@ -124,6 +125,7 @@ describe('computeBestEffectivePrice', () => {
     const result = computeBestEffectivePrice(
       { price: 7, promotions: [makePromotion({ discountedPrice: 10, minQty: 2 })] },
       3,
+      undefined,
       now,
     );
 
@@ -141,6 +143,7 @@ describe('computeBestEffectivePrice', () => {
         ],
       },
       2,
+      undefined,
       now,
     );
 

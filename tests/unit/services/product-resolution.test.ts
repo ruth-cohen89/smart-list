@@ -114,7 +114,7 @@ describe('ProductResolutionService', () => {
       expect(result).not.toBeNull();
       expect(result!.productType).toBe('produce');
       expect(repo.findOrCreateByCanonicalKey).toHaveBeenCalledWith(
-        expect.objectContaining({ canonicalKey: 'tomato' }),
+        expect.objectContaining({ canonicalKey: 'tomato-cherry' }),
       );
     });
   });
@@ -134,20 +134,22 @@ describe('ProductResolutionService', () => {
     });
   });
 
-  describe('resolve — barcode takes priority over produce name', () => {
-    it('resolves as packaged even if name matches produce catalog', async () => {
+  describe('resolve — produce takes priority over barcode', () => {
+    it('resolves as produce even when barcode is present', async () => {
       const repo = mockProductRepo();
       const service = new ProductResolutionService(repo);
 
-      // "עגבניות" matches produce catalog, but barcode is present → packaged
+      // "עגבניות" matches produce catalog — produce wins even if barcode is present.
+      // Shufersal uses weight-embedded EAN-13 codes for fresh produce, so barcode
+      // does not imply a packaged product when the name matches the produce catalog.
       const result = await service.resolve(
         parsedProduct({ barcode: '7290000999999', itemName: 'עגבניות' }),
       );
 
       expect(result).not.toBeNull();
-      expect(result!.productType).toBe('packaged');
-      expect(repo.findOrCreateByBarcode).toHaveBeenCalled();
-      expect(repo.findOrCreateByCanonicalKey).not.toHaveBeenCalled();
+      expect(result!.productType).toBe('produce');
+      expect(repo.findOrCreateByCanonicalKey).toHaveBeenCalled();
+      expect(repo.findOrCreateByBarcode).not.toHaveBeenCalled();
     });
   });
 });
