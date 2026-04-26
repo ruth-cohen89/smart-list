@@ -354,7 +354,7 @@ const RAW_CATALOG: RawProduceEntry[] = [
   {
     canonicalKey: 'pepper-green',
     canonicalName: 'פלפל ירוק',
-    aliases: ['פלפל ירוק', 'פלפל'],
+    aliases: ['פלפל ירוק'],
     category: 'ירק',
     unitType: 'ק"ג',
     isWeighted: true,

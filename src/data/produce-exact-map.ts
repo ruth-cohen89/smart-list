@@ -9,25 +9,25 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     'rami-levy': ['עגבניה'],
     'tiv-taam': ['עגבניות'],
     'machsanei-hashuk': ['עגבניה'],
-    shufersal: [],                                    // no clear fresh candidate
+    shufersal: ['עגבניה', 'עגבניות'],
   },
   cucumber: {
     'tiv-taam': ['מלפפונים'],
     'rami-levy': ['מלפפון'],
     'machsanei-hashuk': ['מלפפון'],
-    shufersal: [],                                    // no clear fresh candidate
+    shufersal: ['מלפפון'],
   },
   carrot: {
-    'tiv-taam': [],                                   // no clear fresh candidate
+    'tiv-taam': ['גזר'],
     'rami-levy': ['גזר ארוז'],
     'machsanei-hashuk': ['גזר ארוז'],
-    shufersal: [],                                    // no clear fresh candidate
+    shufersal: ['גזר ארוז שופרסל'],
   },
   'sweet-potato': {
     'tiv-taam': ['בטטה'],
     'rami-levy': ['בטטה'],
     'machsanei-hashuk': ['בטטה'],
-    shufersal: [],                                    // no clear fresh candidate
+    shufersal: ['בטטות ארוזות'],
   },
   potato: {
     'tiv-taam': ['תפו"א לבן ברשת'],
@@ -39,7 +39,7 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     'tiv-taam': [],                                   // no clear fresh candidate
     'rami-levy': ['תפוח אדמה אדום ארוז'],
     'machsanei-hashuk': ['תפוח אדמה אדום'],
-    shufersal: [],                                    // no clear fresh candidate
+    shufersal: ['תפוח אדמה אדום ארוז'],
   },
   onion: {
     'tiv-taam': ['בצל יבש'],
@@ -66,13 +66,13 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     shufersal: ['פלפל אדום'],
   },
   'pepper-green': {
-    'tiv-taam': [],
+    'tiv-taam': ['פלפל ירוק'],
     'rami-levy': ['פלפל ירוק כהה'],
     'machsanei-hashuk': ['פלפל כהה'],
-    shufersal: [],                                    // no clear fresh candidate
+    shufersal: ['פלפל ירוק בהיר'],
   },
   'pepper-yellow': {
-    'tiv-taam': [],
+    'tiv-taam': ['פלפל צהוב'],
     'rami-levy': ['פלפל צהוב'],
     'machsanei-hashuk': ['פלפל בהיר'],
     shufersal: ['פלפל צהוב'],
@@ -81,13 +81,13 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     'tiv-taam': ['קישואים'],                         // was קשואים — typo fixed
     'rami-levy': ['קישוא ירוק'],
     'machsanei-hashuk': ['קישואים'],
-    shufersal: [],                                    // no clear fresh candidate
+    shufersal: ['קישוא טרי ארוז'],
   },
   eggplant: {
     'tiv-taam': ['חצילים'],
     'rami-levy': ['חציל'],
     'machsanei-hashuk': ['חציל'],
-    shufersal: [],                                    // no clear fresh candidate
+    shufersal: ['חציל'],
   },
   cabbage: {
     'tiv-taam': ['כרוב לבן'],
@@ -111,7 +111,7 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     'tiv-taam': ['ברוקולי'],
     'rami-levy': ['ברוקולי חסלט', 'בייבי ברוקולי חוות תקוע', 'ברוקולי יבולי הכפר מהדרין', 'ברוקולי מיני ארוז א.אדמה'],
     'machsanei-hashuk': ['ברוקולי ארוז יחידה'],
-    shufersal: ['ברוקולי אורגני מארז'],
+    shufersal: ['ברוקולי ארוז כ-350גרם'],
   },
   'lettuce-arabic': {
     'tiv-taam': ['חסה ערבית'],
@@ -141,8 +141,24 @@ const RAW_MAP: Record<string, Partial<Record<ChainId, string[]>>> = {
     'tiv-taam': ['לימון'],
     'rami-levy': ['לימון'],
     'machsanei-hashuk': ['לימון'],
-    shufersal: [],                                    // no clear fresh candidate
+    shufersal: ['לימון'],
   },
+  banana:     { 'rami-levy': ['בננה'],         shufersal: ['בננה'],           'machsanei-hashuk': ['בננה'] },
+  orange:     { 'rami-levy': ['תפוז'],         'tiv-taam': ['תפוז'],          shufersal: ['תפוזים'] },
+  clementine: { 'tiv-taam': ['קלמנטינה'],      shufersal: ['קלמנטינה אור'] },
+  pear:       { 'rami-levy': ['אגס'],          shufersal: ['אגסים'],          'machsanei-hashuk': ['אגסים'] },
+  grape:      { 'rami-levy': ['ענבים ירוקים'], shufersal: ['ענבים ירוקים'],   'machsanei-hashuk': ['ענבים לבן'] },
+  strawberry: { shufersal: ['מארז תות שדה'] },
+  watermelon: { shufersal: ['אבטיח'],          'machsanei-hashuk': ['אבטיח'] },
+  melon:      { 'rami-levy': ['מלון'],         shufersal: ['מלון גסמין'],     'machsanei-hashuk': ['מלון'] },
+  mango:      { shufersal: ['מנגו שלי'] },
+  pineapple:  { 'rami-levy': ['אננס מובחר'],   shufersal: ['אננס טרי יחידה'], 'machsanei-hashuk': ['אננס'] },  // shufersal: unit-based (isWeighted=false)
+  peach:      { 'rami-levy': ['אפרסק'],        'tiv-taam': ['אפרסק'],         shufersal: ['אפרסק'] },
+  nectarine:  { 'rami-levy': ['נקטרינה'],      'tiv-taam': ['נקטרינה'],       shufersal: ['נקטרינה ארוזה'] },
+  kiwi:       { 'rami-levy': ['קיווי'],        'tiv-taam': ['קיווי'],         shufersal: ['קיווי ירוק'],     'machsanei-hashuk': ['קיווי'] },
+  avocado:    { 'rami-levy': ['אבוקדו'],       'tiv-taam': ['אבוקדו'],        shufersal: ['אבוקדו בשל'],     'machsanei-hashuk': ['אבוקדו'] },
+  // apple: intentionally absent for Shufersal and Machsanei Hashuk — no confirmed DB product yet
+  // orange, clementine, strawberry, mango, peach, nectarine: absent for Machsanei Hashuk — no confirmed DB product yet
 };
 
 // Pre-normalize all values at module load so comparisons are safe.

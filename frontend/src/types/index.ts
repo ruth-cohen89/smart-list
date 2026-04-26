@@ -288,6 +288,7 @@ export interface MatchedBasketItem {
   shoppingItemId: string;
   shoppingItemName: string;
   itemQuantity: number;
+  itemUnit: string;
   matchSource: string;
   score: number;
   isAmbiguous: boolean;
@@ -298,6 +299,7 @@ export interface MatchedBasketItem {
   pricingAccuracy: PricingAccuracy;
   product: {
     originalName: string;
+    normalizedName: string;
     price: number;
     isWeighted?: boolean;
   };

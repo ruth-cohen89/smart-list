@@ -22,6 +22,7 @@ export interface MatchedBasketItem {
   shoppingItemId: string;
   shoppingItemName: string;
   itemQuantity: number;
+  itemUnit: string;
   product: ChainProduct;
   matchSource: MatchSource;
   score: number;
@@ -90,19 +91,25 @@ export class PriceComparisonService {
     for (const item of items) {
       const result = await this.matchItemToChain(item, chainId);
       if (result) {
-        const effectivePrice = computeBestEffectivePrice(result.product, item.quantity, item.unit);
+        const isWeighted = result.product.isWeighted ?? (result.product.productType === 'produce');
+
+        // MVP: unit-based chain product matched against a KG-expressed item —
+        // reinterpret quantity as unit count; emit 'UNIT' so nothing downstream treats this as weight.
+        const itemUnitForPricing = !isWeighted && item.unit === 'KG' ? 'UNIT' : (item.unit ?? 'UNIT');
+
+        const effectivePrice = computeBestEffectivePrice(result.product, item.quantity, itemUnitForPricing);
         if (effectivePrice.appliedPromotion) {
           console.log(
-            `[COMPARE] active promo applied chainId=${chainId} itemCode=${result.product.externalId} promotionId=${effectivePrice.appliedPromotion.promotionId} quantity=${item.quantity} unit=${item.unit ?? 'none'} total=${effectivePrice.effectiveTotalPrice}`,
+            `[COMPARE] active promo applied chainId=${chainId} itemCode=${result.product.externalId} promotionId=${effectivePrice.appliedPromotion.promotionId} quantity=${item.quantity} unit=${itemUnitForPricing} total=${effectivePrice.effectiveTotalPrice}`,
           );
         }
 
-        const isWeighted = result.product.isWeighted ?? (result.product.productType === 'produce');
         const pricingAccuracy: PricingAccuracy =
-          isWeighted && (!item.unit || item.unit === 'UNIT') ? 'approximate' : 'accurate';
+          isWeighted && (!itemUnitForPricing || itemUnitForPricing === 'UNIT') ? 'approximate' : 'accurate';
 
         matchedItems.push({
           ...result,
+          itemUnit: itemUnitForPricing,
           regularTotalPrice: effectivePrice.regularTotalPrice,
           effectiveTotalPrice: effectivePrice.effectiveTotalPrice,
           effectiveUnitPrice: effectivePrice.effectiveUnitPrice,
@@ -117,7 +124,7 @@ export class PriceComparisonService {
     const accurateItems = matchedItems.filter((i) => i.pricingAccuracy === 'accurate');
     const totalPrice = accurateItems.reduce((sum, i) => sum + i.effectiveTotalPrice, 0);
     const hasApproximatePricing = matchedItems.some((i) => i.pricingAccuracy === 'approximate');
-    const isComparable = accurateItems.length > 0;
+    const isComparable = unmatchedItems.length === 0 && accurateItems.length > 0;
 
     return {
       chainId,
@@ -134,7 +141,7 @@ export class PriceComparisonService {
   private async matchItemToChain(
     item: ShoppingItem,
     chainId: ChainId,
-  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy' | 'itemUnit'> | null> {
     // Produce detection uses item.name — NOT rawName.
     //
     // rawName comes from receipt OCR and can be a completely unrelated product
@@ -235,7 +242,7 @@ export class PriceComparisonService {
   private async resolveMatchedProduct(
     item: ShoppingItem,
     chainId: ChainId,
-  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy' | 'itemUnit'> | null> {
     const mp = item.matchedProduct!;
 
     // Try by externalProductCode first
@@ -314,7 +321,7 @@ export class PriceComparisonService {
     item: ShoppingItem,
     chainId: ChainId,
     produceMatch: ProduceMatchResult,
-  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy' | 'itemUnit'> | null> {
     const { canonicalKey } = produceMatch.entry;
     const exactAllowed = PRODUCE_CHAIN_EXACT_MAP[canonicalKey]?.[chainId];
 
@@ -372,7 +379,7 @@ export class PriceComparisonService {
       // intended produce name, not the rawName (which is an unrelated receipt product).
       normalizedQueryOverride?: string;
     } = {},
-  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy'> | null> {
+  ): Promise<Omit<MatchedBasketItem, 'regularTotalPrice' | 'effectiveTotalPrice' | 'effectiveUnitPrice' | 'appliedPromotion' | 'pricingAccuracy' | 'itemUnit'> | null> {
     const normalizedInput = options.normalizedQueryOverride ?? normalizeName(item.rawName ?? item.name);
     const inputTokens = tokenSet(normalizedInput);
     const candidates = await this.chainProductRepo.findCandidatesByName(normalizedInput, chainId);

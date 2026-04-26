@@ -7,6 +7,7 @@ import type {
   UpsertChainProductData,
   ProductPromotionSnapshot,
 } from '../models/chain-product.model';
+import { matchProduceCanonical } from '../data/produce-catalog';
 
 const NAME_CANDIDATE_LIMIT = 200;
 
@@ -57,8 +58,24 @@ export class ChainProductRepository {
       return 0;
     }
 
-    const result = await ChainProductMongoose.updateMany(
+    // TEMP: Shufersal produce workaround – price files may omit fresh produce
+    type InactiveCandidateDoc = { _id: Types.ObjectId; originalName: string; normalizedName: string };
+
+    const candidates = await ChainProductMongoose.find(
       { chainId, externalId: { $nin: seenExternalIds }, isActive: true },
+      { _id: 1, originalName: 1, normalizedName: 1 },
+    ).lean<InactiveCandidateDoc[]>();
+
+    if (candidates.length === 0) return 0;
+
+    const nonProduceIds = candidates
+      .filter((doc) => matchProduceCanonical(doc.originalName ?? doc.normalizedName) === null)
+      .map((doc) => doc._id);
+
+    if (nonProduceIds.length === 0) return 0;
+
+    const result = await ChainProductMongoose.updateMany(
+      { _id: { $in: nonProduceIds } },
       { $set: { isActive: false } },
     );
 

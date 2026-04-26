@@ -9,6 +9,17 @@ import ramiLevyLogo from '../../assets/stores/rami-levi.png';
 import shufersalLogo from '../../assets/stores/shufersal.png';
 import machsaneiHashukLogo from '../../assets/stores/machsanei-hashuk.png';
 
+// Items whose names are ambiguous — user needs to specify a variant.
+const AMBIGUOUS_ITEM_SUGGESTIONS: Record<string, string> = {
+  'פלפל': 'פלפל אדום / ירוק / צהוב',
+};
+
+function unitLabel(unit: string): string {
+  if (unit === 'KG') return 'ק"ג';
+  if (unit === 'G') return 'ג\'';
+  return 'יח\'';
+}
+
 // ─── Store metadata ────────────────────────────────────────────────────────
 
 const CHAIN_LABELS: Record<ChainId, string> = {
@@ -84,6 +95,7 @@ export default function PriceComparisonPage() {
     priceComparisonService
       .compareActive()
       .then((data) => {
+        console.log('[PriceComparison] API response:', JSON.stringify(data, null, 2));
         setResult(data);
         setStatus('ready');
       })
@@ -289,16 +301,20 @@ function ChainCard({
 
         {/* Price + delta */}
         <div className="text-right flex-shrink-0">
-          {chain.isComparable ? (
+          {(chain.matchedItems ?? []).length > 0 ? (
             <>
               <p className="text-xl font-bold text-gray-900 tabular-nums">
                 {chain.totalPrice.toFixed(2)}{' '}
                 <span className="text-sm font-medium text-gray-400">&#8362;</span>
               </p>
-              {!isCheapest && savingsVsCheapest > 0.01 && (
-                <p className="text-xs font-medium text-red-400 tabular-nums mt-0.5">
-                  +{savingsVsCheapest.toFixed(2)} &#8362;
-                </p>
+              {!chain.isComparable ? (
+                <p className="text-xs font-medium text-amber-500 mt-0.5">Partial comparison</p>
+              ) : (
+                !isCheapest && savingsVsCheapest > 0.01 && (
+                  <p className="text-xs font-medium text-red-400 tabular-nums mt-0.5">
+                    +{savingsVsCheapest.toFixed(2)} &#8362;
+                  </p>
+                )
               )}
             </>
           ) : (
@@ -330,7 +346,7 @@ function ChainCard({
         }}
       >
         <div className="border-t border-gray-100/80">
-          {!chain.isComparable ? (
+          {(chain.matchedItems ?? []).length === 0 && (chain.unmatchedItems ?? []).length === 0 ? (
             <p className="px-5 py-4 text-sm text-gray-400">
               No products could be compared for this store.
             </p>
@@ -348,7 +364,7 @@ function ChainCard({
                             {item.shoppingItemName}
                           </p>
                           <p className="text-xs text-gray-400 truncate">
-                            {item.product.originalName}
+                            {item.product.originalName || item.product.normalizedName}
                             {item.itemQuantity > 1 ? ` x${item.itemQuantity}` : ''}
                           </p>
                           {item.appliedPromotion && (
@@ -356,10 +372,16 @@ function ChainCard({
                               {item.appliedPromotion.description}
                             </p>
                           )}
+                          {item.pricingAccuracy === 'approximate' && (
+                            <p className="text-xs text-amber-500 mt-0.5">~estimated price</p>
+                          )}
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="text-sm font-semibold text-gray-900 tabular-nums">
                             {item.effectiveTotalPrice.toFixed(2)} &#8362;
+                          </p>
+                          <p className="text-xs text-gray-400 tabular-nums">
+                            {item.effectiveUnitPrice.toFixed(2)} &#8362;/{unitLabel(item.itemUnit)}
                           </p>
                           {hasSavings && (
                             <p className="text-xs text-gray-400 line-through tabular-nums">
@@ -376,16 +398,22 @@ function ChainCard({
               {/* Unmatched items */}
               {(chain.unmatchedItems ?? []).length > 0 && (
                 <div className="bg-gray-50/60 px-5 py-3">
-                  <p className="text-xs font-medium text-gray-400 mb-1.5">Not found in this store</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(chain.unmatchedItems ?? []).map((item) => (
-                      <span
-                        key={item.shoppingItemId}
-                        className="text-xs bg-white px-2 py-0.5 rounded-md text-gray-500 border border-gray-150"
-                      >
-                        {item.shoppingItemName}
-                      </span>
-                    ))}
+                  <p className="text-xs font-medium text-gray-400 mb-2">Not found in this store</p>
+                  <div className="space-y-1.5">
+                    {(chain.unmatchedItems ?? []).map((item) => {
+                      const suggestion = AMBIGUOUS_ITEM_SUGGESTIONS[item.shoppingItemName.trim()];
+                      return (
+                        <div key={item.shoppingItemId} className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm text-gray-600 truncate">{item.shoppingItemName}</p>
+                            {suggestion && (
+                              <p className="text-xs text-amber-600 mt-0.5">Did you mean: {suggestion}?</p>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400 flex-shrink-0 mt-0.5">Not found</p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -122,10 +122,10 @@ describe('PriceComparisonService — match priority', () => {
 
   describe('priority 3: produce catalog', () => {
     it('returns unmatched for produce when canonicalKey is not in exact map', async () => {
-      // 'תפוז' (orange) is in the produce catalog but not in PRODUCE_CHAIN_EXACT_MAP
+      // 'אשכולית' (grapefruit) is in the produce catalog but not in PRODUCE_CHAIN_EXACT_MAP
       // → matchByProduce returns null immediately, no DB call.
       const { service, chainProductRepo } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'תפוז' })],
+        shoppingListItems: [fakeShoppingItem({ name: 'אשכולית' })],
       });
 
       const result = await service.compareActiveList('user-1');
@@ -226,6 +226,72 @@ describe('PriceComparisonService — match priority', () => {
 
       expect(result.chains[0].matchedItems).toHaveLength(0);
       expect(result.chains[0].unmatchedItems).toHaveLength(1);
+    });
+  });
+
+  describe('Shufersal fruit exact mapping', () => {
+    it('AC2: apple has no Shufersal exact map entry → unmatched', async () => {
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'תפוח' })],
+        chainProductsByNormalizedNames: [
+          fakeChainProduct({ originalName: 'תפוח עץ', normalizedName: 'תפוח עץ' }),
+        ],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const shufersal = result.chains.find((c) => c.chainId === 'shufersal')!;
+
+      expect(shufersal.matchedItems).toHaveLength(0);
+      expect(shufersal.unmatchedItems).toHaveLength(1);
+    });
+
+    it('AC3: "קיווי" matches Shufersal "קיווי ירוק"', async () => {
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'קיווי' })],
+        chainProductsByNormalizedNames: [
+          fakeChainProduct({ originalName: 'קיווי ירוק', normalizedName: 'קיווי ירוק', isWeighted: true }),
+        ],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const shufersal = result.chains.find((c) => c.chainId === 'shufersal')!;
+
+      expect(shufersal.matchedItems).toHaveLength(1);
+      expect(shufersal.matchedItems[0].matchSource).toBe('produce');
+    });
+
+    it('AC4: "נקטרינה" matches Shufersal "נקטרינה ארוזה"', async () => {
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'נקטרינה' })],
+        chainProductsByNormalizedNames: [
+          fakeChainProduct({ originalName: 'נקטרינה ארוזה', normalizedName: 'נקטרינה ארוזה', isWeighted: true }),
+        ],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const shufersal = result.chains.find((c) => c.chainId === 'shufersal')!;
+
+      expect(shufersal.matchedItems).toHaveLength(1);
+      expect(shufersal.matchedItems[0].matchSource).toBe('produce');
+    });
+
+    it('AC5+6: "אננס" with unit=KG matches "אננס טרי יחידה"; itemUnit=UNIT, pricingAccuracy=accurate', async () => {
+      // MVP: KG quantity reinterpreted as unit count; 2 kg → 2 units of pineapple
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'אננס', quantity: 2, unit: 'KG' })],
+        chainProductsByNormalizedNames: [
+          fakeChainProduct({ originalName: 'אננס טרי יחידה', normalizedName: 'אננס טרי יחידה', isWeighted: false, price: 10 }),
+        ],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const shufersal = result.chains.find((c) => c.chainId === 'shufersal')!;
+      const matched = shufersal.matchedItems[0];
+
+      expect(matched.matchSource).toBe('produce');
+      expect(matched.itemUnit).toBe('UNIT');
+      expect(matched.pricingAccuracy).toBe('accurate');
+      expect(matched.effectiveTotalPrice).toBeCloseTo(20);
     });
   });
 
@@ -387,13 +453,73 @@ describe('PriceComparisonService — match priority', () => {
     });
   });
 
+  describe('pepper ambiguity — bare פלפל is unmatched', () => {
+    it('פלפל alone does not match any produce entry', async () => {
+      const { service, chainProductRepo } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'פלפל' })],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const chain = result.chains[0];
+
+      // 'פלפל' is no longer an alias of pepper-green; matchProduceCanonical returns null.
+      // Without a produce match it falls through to name matching (no productId/barcode).
+      // findCandidatesByName may be called, but the item should end up unmatched or at most
+      // matched by name — the important thing is it does NOT incorrectly match as pepper-green.
+      expect(chain.unmatchedItems.some((i) => i.shoppingItemName === 'פלפל')).toBe(true);
+      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
+    });
+
+    it('פלפל ירוק still matches pepper-green produce entry', async () => {
+      // tiv-taam maps pepper-green → 'פלפל ירוק'; check that chain specifically.
+      const cp = fakeChainProduct({
+        id: 'cp-pepper-green',
+        originalName: 'פלפל ירוק',
+        normalizedName: 'פלפל ירוק',
+        price: 5,
+      });
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'פלפל ירוק' })],
+        chainProductsByNormalizedNames: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const tivTaam = result.chains.find((c) => c.chainId === 'tiv-taam')!;
+      const matched = tivTaam.matchedItems;
+
+      expect(matched).toHaveLength(1);
+      expect(matched[0].matchSource).toBe('produce');
+      expect(matched[0].product.id).toBe('cp-pepper-green');
+    });
+
+    it('פלפל אדום still matches pepper-red produce entry', async () => {
+      const cp = fakeChainProduct({
+        id: 'cp-pepper-red',
+        originalName: 'פלפל אדום',
+        normalizedName: 'פלפל אדום',
+        price: 6,
+      });
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'פלפל אדום' })],
+        chainProductsByNormalizedNames: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const matched = result.chains[0].matchedItems;
+
+      expect(matched).toHaveLength(1);
+      expect(matched[0].matchSource).toBe('produce');
+      expect(matched[0].product.id).toBe('cp-pepper-red');
+    });
+  });
+
   describe('produce matching — exact map only', () => {
-    // תפוז / בננה / תפוח are in the produce catalog but NOT in PRODUCE_CHAIN_EXACT_MAP.
+    // אשכולית / תפוח are in the produce catalog but NOT in PRODUCE_CHAIN_EXACT_MAP.
     // matchByProduce must return null immediately — no DB call, no fuzzy fallback.
 
-    it('produce item with no map entry is always unmatched (תפוז)', async () => {
+    it('produce item with no map entry is always unmatched (אשכולית)', async () => {
       const { service, chainProductRepo } = buildService({
-        shoppingListItems: [fakeShoppingItem({ name: 'תפוז' })],
+        shoppingListItems: [fakeShoppingItem({ name: 'אשכולית' })],
       });
       const chain = (await service.compareActiveList('user-1')).chains[0];
       expect(chain.matchedItems).toHaveLength(0);
@@ -401,14 +527,14 @@ describe('PriceComparisonService — match priority', () => {
       expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
 
-    it('produce item with no map entry is always unmatched (בננה)', async () => {
-      const { service, chainProductRepo } = buildService({
+    it('produce item with map entry for one chain but no DB match → unmatched (בננה)', async () => {
+      // banana has a shufersal entry now; DB returns nothing → still unmatched.
+      const { service } = buildService({
         shoppingListItems: [fakeShoppingItem({ name: 'בננה' })],
       });
       const chain = (await service.compareActiveList('user-1')).chains[0];
       expect(chain.matchedItems).toHaveLength(0);
       expect(chain.unmatchedItems).toHaveLength(1);
-      expect(chainProductRepo.findByNormalizedNames).not.toHaveBeenCalled();
     });
 
     it('produce item with no map entry is always unmatched (תפוח)', async () => {
@@ -429,6 +555,74 @@ describe('PriceComparisonService — match priority', () => {
       const chain = (await service.compareActiveList('user-1')).chains[0];
       expect(chain.matchedItems).toHaveLength(0);
       expect(chain.unmatchedItems).toHaveLength(1);
+    });
+  });
+
+  describe('Rami Levy fruit exact mapping', () => {
+    it('"אגסים" matches Rami Levy "אגס"', async () => {
+      const cp = fakeChainProduct({
+        id: 'cp-pear-rl',
+        chainId: 'rami-levy' as ChainId,
+        originalName: 'אגס',
+        normalizedName: 'אגס',
+        isWeighted: true,
+        price: 9,
+      });
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'אגסים' })],
+        chainProductsByNormalizedNames: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const ramiLevy = result.chains.find((c) => c.chainId === 'rami-levy')!;
+
+      expect(ramiLevy.matchedItems).toHaveLength(1);
+      expect(ramiLevy.matchedItems[0].matchSource).toBe('produce');
+      expect(ramiLevy.matchedItems[0].product.id).toBe('cp-pear-rl');
+    });
+
+    it('"אננס" matches Rami Levy "אננס מובחר"', async () => {
+      const cp = fakeChainProduct({
+        id: 'cp-pineapple-rl',
+        chainId: 'rami-levy' as ChainId,
+        originalName: 'אננס מובחר',
+        normalizedName: 'אננס מובחר',
+        isWeighted: false,
+        price: 15,
+      });
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'אננס' })],
+        chainProductsByNormalizedNames: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const ramiLevy = result.chains.find((c) => c.chainId === 'rami-levy')!;
+
+      expect(ramiLevy.matchedItems).toHaveLength(1);
+      expect(ramiLevy.matchedItems[0].matchSource).toBe('produce');
+      expect(ramiLevy.matchedItems[0].product.id).toBe('cp-pineapple-rl');
+    });
+
+    it('"ענבים" matches Rami Levy "ענבים ירוקים"', async () => {
+      const cp = fakeChainProduct({
+        id: 'cp-grapes-rl',
+        chainId: 'rami-levy' as ChainId,
+        originalName: 'ענבים ירוקים',
+        normalizedName: 'ענבים ירוקים',
+        isWeighted: true,
+        price: 20,
+      });
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ name: 'ענבים' })],
+        chainProductsByNormalizedNames: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+      const ramiLevy = result.chains.find((c) => c.chainId === 'rami-levy')!;
+
+      expect(ramiLevy.matchedItems).toHaveLength(1);
+      expect(ramiLevy.matchedItems[0].matchSource).toBe('produce');
+      expect(ramiLevy.matchedItems[0].product.id).toBe('cp-grapes-rl');
     });
   });
 
@@ -454,6 +648,54 @@ describe('PriceComparisonService — match priority', () => {
       const result = await service.compareActiveList('user-1');
 
       expect(result.cheapestChainId).toBeNull();
+    });
+
+    it('returns null when all chains have at least one unmatched item', async () => {
+      const cp = fakeChainProduct({ price: 5 });
+      const { service } = buildService({
+        shoppingListItems: [
+          fakeShoppingItem({ id: 'item-1', productId: 'prod-1', quantity: 1 }),
+          fakeShoppingItem({ id: 'item-2', name: 'פריט לא קיים' }),
+        ],
+        chainProductsByProductId: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+
+      expect(result.cheapestChainId).toBeNull();
+    });
+
+    it('marks chain as not comparable when it has unmatched items', async () => {
+      const cp = fakeChainProduct({ price: 5 });
+      const { service } = buildService({
+        shoppingListItems: [
+          fakeShoppingItem({ id: 'item-1', productId: 'prod-1', quantity: 1 }),
+          fakeShoppingItem({ id: 'item-2', name: 'פריט לא קיים' }),
+        ],
+        chainProductsByProductId: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+
+      for (const chain of result.chains) {
+        expect(chain.isComparable).toBe(false);
+        expect(chain.unmatchedItems).toHaveLength(1);
+      }
+    });
+
+    it('marks chain as comparable only when all items are matched', async () => {
+      const cp = fakeChainProduct({ price: 5 });
+      const { service } = buildService({
+        shoppingListItems: [fakeShoppingItem({ productId: 'prod-1', quantity: 1 })],
+        chainProductsByProductId: [cp],
+      });
+
+      const result = await service.compareActiveList('user-1');
+
+      for (const chain of result.chains) {
+        expect(chain.isComparable).toBe(true);
+        expect(chain.unmatchedItems).toHaveLength(0);
+      }
     });
   });
 });
