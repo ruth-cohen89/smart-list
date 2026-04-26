@@ -245,11 +245,11 @@ describe('PriceComparisonService — match priority', () => {
       expect(shufersal.unmatchedItems).toHaveLength(1);
     });
 
-    it('AC3: "קיווי" matches Shufersal "קיווי ירוק"', async () => {
+    it('AC3: "קיווי" matches Shufersal "מארז קיווי ירוק"', async () => {
       const { service } = buildService({
         shoppingListItems: [fakeShoppingItem({ name: 'קיווי' })],
         chainProductsByNormalizedNames: [
-          fakeChainProduct({ originalName: 'קיווי ירוק', normalizedName: 'קיווי ירוק', isWeighted: true }),
+          fakeChainProduct({ originalName: 'מארז קיווי ירוק', normalizedName: 'מארז קיווי ירוק', isWeighted: true }),
         ],
       });
 
@@ -260,11 +260,11 @@ describe('PriceComparisonService — match priority', () => {
       expect(shufersal.matchedItems[0].matchSource).toBe('produce');
     });
 
-    it('AC4: "נקטרינה" matches Shufersal "נקטרינה ארוזה"', async () => {
+    it('AC4: "נקטרינה" matches Shufersal "נקטרינה ארוז"', async () => {
       const { service } = buildService({
         shoppingListItems: [fakeShoppingItem({ name: 'נקטרינה' })],
         chainProductsByNormalizedNames: [
-          fakeChainProduct({ originalName: 'נקטרינה ארוזה', normalizedName: 'נקטרינה ארוזה', isWeighted: true }),
+          fakeChainProduct({ originalName: 'נקטרינה ארוז', normalizedName: 'נקטרינה ארוז', isWeighted: true }),
         ],
       });
 
